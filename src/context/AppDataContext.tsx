@@ -8,6 +8,8 @@ import {
 import {
   initialWalletBalance,
   listenerApplications as seedApplications,
+  listenerEarnings as seedListenerEarnings,
+  listenerRequests as seedListenerRequests,
   listeners,
   seedConversation,
   sessions as seedSessions,
@@ -17,6 +19,8 @@ import type {
   ChatMessage,
   Listener,
   ListenerApplication,
+  ListenerEarnings,
+  ListenerRequest,
   Session,
   Transaction,
 } from "../types";
@@ -42,6 +46,12 @@ interface AppDataContextValue {
   rateSession: (sessionId: string, rating: number) => void;
   approveApplication: (id: string) => void;
   rejectApplication: (id: string) => void;
+  listenerOnline: boolean;
+  toggleListenerOnline: () => void;
+  listenerRequests: ListenerRequest[];
+  listenerEarnings: ListenerEarnings;
+  acceptListenerRequest: (id: string) => void;
+  declineListenerRequest: (id: string) => void;
 }
 
 const AppDataContext = createContext<AppDataContextValue | null>(null);
@@ -61,6 +71,13 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
   const [applications, setApplications] = useState<ListenerApplication[]>(seedApplications);
   const [conversations, setConversations] = useState<Record<string, ChatMessage[]>>(
     buildInitialConversations,
+  );
+  const [listenerOnline, setListenerOnline] = useState(true);
+  const [listenerRequests, setListenerRequests] = useState<ListenerRequest[]>(
+    seedListenerRequests,
+  );
+  const [listenerEarnings, setListenerEarnings] = useState<ListenerEarnings>(
+    seedListenerEarnings,
   );
 
   const addMoney = (amount: number) => {
@@ -140,6 +157,25 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     setApplications((prev) => prev.filter((application) => application.id !== id));
   };
 
+  const toggleListenerOnline = () => {
+    setListenerOnline((prev) => !prev);
+  };
+
+  const acceptListenerRequest = (id: string) => {
+    setListenerRequests((prev) => prev.filter((request) => request.id !== id));
+    setListenerEarnings((prev) => ({
+      ...prev,
+      today: prev.today + 100,
+      week: prev.week + 100,
+      month: prev.month + 100,
+      lifetime: prev.lifetime + 100,
+    }));
+  };
+
+  const declineListenerRequest = (id: string) => {
+    setListenerRequests((prev) => prev.filter((request) => request.id !== id));
+  };
+
   const value = useMemo(
     () => ({
       walletBalance,
@@ -153,8 +189,23 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
       rateSession,
       approveApplication,
       rejectApplication,
+      listenerOnline,
+      toggleListenerOnline,
+      listenerRequests,
+      listenerEarnings,
+      acceptListenerRequest,
+      declineListenerRequest,
     }),
-    [walletBalance, transactions, sessions, applications, conversations],
+    [
+      walletBalance,
+      transactions,
+      sessions,
+      applications,
+      conversations,
+      listenerOnline,
+      listenerRequests,
+      listenerEarnings,
+    ],
   );
 
   return (

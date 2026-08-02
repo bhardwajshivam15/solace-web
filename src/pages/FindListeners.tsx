@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { Search, SlidersHorizontal, Headphones } from "lucide-react";
 import { chatFilters, listeners } from "../data/mockData";
 import ListenerCard from "../components/ListenerCard";
@@ -8,8 +9,18 @@ const sortOptions = ["Recommended", "Price: Low to High", "Rating: High to Low"]
 type SortOption = (typeof sortOptions)[number];
 
 export default function FindListeners() {
-  const [activeFilter, setActiveFilter] = useState("All");
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [searchParams] = useSearchParams();
+  const filterFromUrl = searchParams.get("filter");
+  const listenerFromUrl = searchParams.get("listener");
+
+  const [activeFilter, setActiveFilter] = useState(
+    filterFromUrl && chatFilters.includes(filterFromUrl) ? filterFromUrl : "All",
+  );
+  const [selectedId, setSelectedId] = useState<string | null>(
+    listenerFromUrl && listeners.some((listener) => listener.id === listenerFromUrl)
+      ? listenerFromUrl
+      : null,
+  );
   const [query, setQuery] = useState("");
   const [sortBy, setSortBy] = useState<SortOption>("Recommended");
   const [showSortMenu, setShowSortMenu] = useState(false);

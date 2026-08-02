@@ -9,7 +9,11 @@ import {
   Banknote,
   FileBarChart,
   Trophy,
+  Bell,
+  FileText,
   Settings,
+  ScrollText,
+  LifeBuoy,
 } from "lucide-react";
 
 const navItems = [
@@ -21,7 +25,11 @@ const navItems = [
   { to: "/admin/withdrawals", label: "Withdrawals", icon: Banknote },
   { to: "/admin/reports", label: "Reports", icon: FileBarChart },
   { to: "/admin/leaderboard", label: "Leaderboard", icon: Trophy },
+  { to: "/admin/notifications", label: "Notifications", icon: Bell },
+  { to: "/admin/cms", label: "CMS", icon: FileText },
   { to: "/admin/settings", label: "Settings", icon: Settings },
+  { to: "/admin/audit-logs", label: "Audit Logs", icon: ScrollText },
+  { to: "/admin/support-tickets", label: "Support Tickets", icon: LifeBuoy },
 ];
 
 export default function AdminSidebar() {
