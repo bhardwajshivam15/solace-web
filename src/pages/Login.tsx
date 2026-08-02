@@ -2,14 +2,29 @@ import { useState, type FormEvent } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { Heart, Lock, Mail } from "lucide-react";
 
+type Role = "speaker" | "listener" | "admin";
+
+const roleDestination: Record<Role, string> = {
+  speaker: "/app/home",
+  listener: "/listener",
+  admin: "/admin",
+};
+
+const roleLabel: Record<Role, string> = {
+  speaker: "Speaker",
+  listener: "Listener",
+  admin: "Admin",
+};
+
 export default function Login() {
   const navigate = useNavigate();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [role, setRole] = useState<Role>("speaker");
 
   const handleSubmit = (event: FormEvent) => {
     event.preventDefault();
-    navigate("/app/find-listeners");
+    navigate(roleDestination[role]);
   };
 
   return (
@@ -26,6 +41,21 @@ export default function Login() {
         <p className="mt-1 text-center text-sm text-gray-500">
           Log in to continue your conversations.
         </p>
+
+        <div className="mt-5 inline-flex w-full rounded-xl bg-gray-100 p-1">
+          {(Object.keys(roleLabel) as Role[]).map((option) => (
+            <button
+              key={option}
+              type="button"
+              onClick={() => setRole(option)}
+              className={`flex-1 rounded-lg py-2 text-sm font-medium transition-colors ${
+                role === option ? "bg-white text-ink-900 shadow-sm" : "text-gray-500"
+              }`}
+            >
+              {roleLabel[option]}
+            </button>
+          ))}
+        </div>
 
         <form onSubmit={handleSubmit} className="mt-6 space-y-4">
           <div>
@@ -88,7 +118,7 @@ export default function Login() {
         </div>
 
         <button
-          onClick={() => navigate("/app/find-listeners")}
+          onClick={() => navigate(roleDestination[role])}
           className="w-full rounded-lg border border-gray-200 py-3 text-sm font-semibold text-ink-900 hover:bg-gray-50"
         >
           Continue with Google

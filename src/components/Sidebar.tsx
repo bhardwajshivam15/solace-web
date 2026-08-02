@@ -8,6 +8,7 @@ import {
   Receipt,
   MessageSquare,
   Bell,
+  UserCircle,
   Settings,
   HelpCircle,
 } from "lucide-react";
@@ -21,6 +22,7 @@ const navItems = [
   { to: "/app/transactions", label: "Transactions", icon: Receipt },
   { to: "/app/messages", label: "Messages", icon: MessageSquare },
   { to: "/app/notifications", label: "Notifications", icon: Bell },
+  { to: "/app/profile", label: "Profile", icon: UserCircle },
   { to: "/app/settings", label: "Settings", icon: Settings },
   { to: "/app/help", label: "Help & Support", icon: HelpCircle },
 ];
