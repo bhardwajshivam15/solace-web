@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import {
   Check,
@@ -28,9 +28,34 @@ import {
   reportedConversations,
   adminOverviewStats,
 } from "../data/mockData";
-import { useAppData } from "../context/AppDataContext";
+import { useAuth } from "../context/AuthContext";
+import { apiRequest, ApiError } from "../lib/apiClient";
 import RevenueChart from "../components/RevenueChart";
 import SessionsBarChart from "../components/SessionsBarChart";
+
+interface PendingApplication {
+  id: string;
+  name: string;
+  avatar: string | null;
+  topic: string | null;
+}
+
+function ApplicationAvatar({ name, avatar }: { name: string; avatar: string | null }) {
+  if (avatar) {
+    return <img src={avatar} alt={name} className="h-9 w-9 rounded-full object-cover" />;
+  }
+  const initials = name
+    .split(" ")
+    .map((part) => part[0])
+    .slice(0, 2)
+    .join("")
+    .toUpperCase();
+  return (
+    <div className="flex h-9 w-9 items-center justify-center rounded-full bg-brand-100 text-xs font-semibold text-brand-700">
+      {initials}
+    </div>
+  );
+}
 
 const stats = [
   { label: "Total Users", value: adminOverviewStats.totalUsers.toLocaleString("en-IN"), icon: Users },
@@ -72,10 +97,39 @@ const quickActions = [
 ];
 
 export default function AdminDashboard() {
-  const { applications, approveApplication, rejectApplication } = useAppData();
+  const { token } = useAuth();
   const [period, setPeriod] = useState<Period>("This Week");
   const [periodMenuOpen, setPeriodMenuOpen] = useState(false);
   const [withdrawals, setWithdrawals] = useState(seedWithdrawalRequests);
+
+  const [applications, setApplications] = useState<PendingApplication[]>([]);
+  const [applicationsLoading, setApplicationsLoading] = useState(true);
+  const [applicationsError, setApplicationsError] = useState<string | null>(null);
+
+  useEffect(() => {
+    apiRequest<{ data: PendingApplication[] }>("/admin/listener-applications", { token })
+      .then((response) => setApplications(response.data))
+      .catch((err) => setApplicationsError(err instanceof ApiError ? err.message : "Could not load applications."))
+      .finally(() => setApplicationsLoading(false));
+  }, [token]);
+
+  const approveApplication = async (id: string) => {
+    try {
+      await apiRequest(`/admin/listener-applications/${id}/approve`, { method: "POST", token });
+      setApplications((prev) => prev.filter((application) => application.id !== id));
+    } catch (err) {
+      setApplicationsError(err instanceof ApiError ? err.message : "Could not approve this application.");
+    }
+  };
+
+  const rejectApplication = async (id: string) => {
+    try {
+      await apiRequest(`/admin/listener-applications/${id}/reject`, { method: "POST", token });
+      setApplications((prev) => prev.filter((application) => application.id !== id));
+    } catch (err) {
+      setApplicationsError(err instanceof ApiError ? err.message : "Could not reject this application.");
+    }
+  };
 
   const activeData = periods[period];
 
@@ -277,35 +331,42 @@ export default function AdminDashboard() {
         <div className="rounded-2xl border border-gray-100 bg-white p-5">
           <p className="font-semibold text-ink-900">Listener Applications</p>
           <div className="mt-4 space-y-4">
-            {applications.map((application) => (
-              <div key={application.id} className="flex items-center gap-3">
-                <img
-                  src={application.avatar}
-                  alt={application.name}
-                  className="h-9 w-9 rounded-full object-cover"
-                />
-                <div className="flex-1">
-                  <p className="text-sm font-medium text-ink-900">
-                    {application.name}
-                  </p>
-                  <p className="text-xs text-gray-400">{application.topic}</p>
-                </div>
-                <button
-                  onClick={() => approveApplication(application.id)}
-                  className="flex h-7 w-7 items-center justify-center rounded-full bg-green-50 text-green-600 hover:bg-green-100"
-                >
-                  <Check className="h-4 w-4" />
-                </button>
-                <button
-                  onClick={() => rejectApplication(application.id)}
-                  className="flex h-7 w-7 items-center justify-center rounded-full bg-red-50 text-red-500 hover:bg-red-100"
-                >
-                  <X className="h-4 w-4" />
-                </button>
-              </div>
-            ))}
+            {applicationsError && (
+              <p className="rounded-lg bg-red-50 px-3 py-2 text-xs text-red-600">
+                {applicationsError}
+              </p>
+            )}
 
-            {applications.length === 0 && (
+            {applicationsLoading && (
+              <p className="py-6 text-center text-sm text-gray-400">Loading...</p>
+            )}
+
+            {!applicationsLoading &&
+              applications.map((application) => (
+                <div key={application.id} className="flex items-center gap-3">
+                  <ApplicationAvatar name={application.name} avatar={application.avatar} />
+                  <div className="flex-1">
+                    <p className="text-sm font-medium text-ink-900">
+                      {application.name}
+                    </p>
+                    <p className="text-xs text-gray-400">{application.topic ?? "Listener applicant"}</p>
+                  </div>
+                  <button
+                    onClick={() => approveApplication(application.id)}
+                    className="flex h-7 w-7 items-center justify-center rounded-full bg-green-50 text-green-600 hover:bg-green-100"
+                  >
+                    <Check className="h-4 w-4" />
+                  </button>
+                  <button
+                    onClick={() => rejectApplication(application.id)}
+                    className="flex h-7 w-7 items-center justify-center rounded-full bg-red-50 text-red-500 hover:bg-red-100"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+              ))}
+
+            {!applicationsLoading && applications.length === 0 && (
               <p className="py-6 text-center text-sm text-gray-400">
                 No pending applications.
               </p>

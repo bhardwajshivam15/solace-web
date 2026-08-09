@@ -1,11 +1,14 @@
 import { Navigate, Route, Routes } from "react-router-dom";
 import { AppDataProvider } from "./context/AppDataContext";
+import { AuthProvider } from "./context/AuthContext";
 import AppLayout from "./layouts/AppLayout";
 import AdminLayout from "./layouts/AdminLayout";
 import ListenerLayout from "./layouts/ListenerLayout";
 import LandingPage from "./pages/LandingPage";
 import Login from "./pages/Login";
 import SignUp from "./pages/SignUp";
+import ForgotPassword from "./pages/ForgotPassword";
+import ResetPassword from "./pages/ResetPassword";
 
 // Speaker
 import Home from "./pages/Home";
@@ -47,56 +50,60 @@ import AdminSupportTickets from "./pages/AdminSupportTickets";
 
 export default function App() {
   return (
-    <AppDataProvider>
-      <Routes>
-        <Route path="/" element={<LandingPage />} />
-        <Route path="/login" element={<Login />} />
-        <Route path="/signup" element={<SignUp />} />
+    <AuthProvider>
+      <AppDataProvider>
+        <Routes>
+          <Route path="/" element={<LandingPage />} />
+          <Route path="/login" element={<Login />} />
+          <Route path="/signup" element={<SignUp />} />
+          <Route path="/forgot-password" element={<ForgotPassword />} />
+          <Route path="/reset-password" element={<ResetPassword />} />
 
-        <Route path="/app" element={<AppLayout />}>
-          <Route index element={<Navigate to="home" replace />} />
-          <Route path="home" element={<Home />} />
-          <Route path="find-listeners" element={<FindListeners />} />
-          <Route path="sessions" element={<MySessions />} />
-          <Route path="wallet" element={<Wallet />} />
-          <Route path="transactions" element={<Transactions />} />
-          <Route path="messages" element={<SpeakerMessages />} />
-          <Route path="notifications" element={<Notifications />} />
-          <Route path="profile" element={<Profile />} />
-          <Route path="settings" element={<Settings />} />
-          <Route path="help" element={<HelpSupport />} />
-        </Route>
+          <Route path="/app" element={<AppLayout />}>
+            <Route index element={<Navigate to="home" replace />} />
+            <Route path="home" element={<Home />} />
+            <Route path="find-listeners" element={<FindListeners />} />
+            <Route path="sessions" element={<MySessions />} />
+            <Route path="wallet" element={<Wallet />} />
+            <Route path="transactions" element={<Transactions />} />
+            <Route path="messages" element={<SpeakerMessages />} />
+            <Route path="notifications" element={<Notifications />} />
+            <Route path="profile" element={<Profile />} />
+            <Route path="settings" element={<Settings />} />
+            <Route path="help" element={<HelpSupport />} />
+          </Route>
 
-        <Route path="/listener" element={<ListenerLayout />}>
-          <Route index element={<ListenerDashboard />} />
-          <Route path="messages" element={<ListenerMessages />} />
-          <Route path="sessions" element={<ListenerSessions />} />
-          <Route path="availability" element={<Availability />} />
-          <Route path="earnings" element={<Earnings />} />
-          <Route path="withdrawals" element={<Withdrawals />} />
-          <Route path="ratings" element={<Ratings />} />
-          <Route path="profile" element={<ListenerProfile />} />
-          <Route path="settings" element={<ListenerSettings />} />
-        </Route>
+          <Route path="/listener" element={<ListenerLayout />}>
+            <Route index element={<ListenerDashboard />} />
+            <Route path="messages" element={<ListenerMessages />} />
+            <Route path="sessions" element={<ListenerSessions />} />
+            <Route path="availability" element={<Availability />} />
+            <Route path="earnings" element={<Earnings />} />
+            <Route path="withdrawals" element={<Withdrawals />} />
+            <Route path="ratings" element={<Ratings />} />
+            <Route path="profile" element={<ListenerProfile />} />
+            <Route path="settings" element={<ListenerSettings />} />
+          </Route>
 
-        <Route path="/admin" element={<AdminLayout />}>
-          <Route index element={<AdminDashboard />} />
-          <Route path="users" element={<AdminUsers />} />
-          <Route path="listeners" element={<AdminListeners />} />
-          <Route path="sessions" element={<AdminSessions />} />
-          <Route path="transactions" element={<AdminTransactions />} />
-          <Route path="withdrawals" element={<AdminWithdrawals />} />
-          <Route path="reports" element={<AdminReports />} />
-          <Route path="leaderboard" element={<AdminLeaderboard />} />
-          <Route path="notifications" element={<AdminNotifications />} />
-          <Route path="cms" element={<AdminCms />} />
-          <Route path="settings" element={<AdminSettings />} />
-          <Route path="audit-logs" element={<AdminAuditLogs />} />
-          <Route path="support-tickets" element={<AdminSupportTickets />} />
-        </Route>
+          <Route path="/admin" element={<AdminLayout />}>
+            <Route index element={<AdminDashboard />} />
+            <Route path="users" element={<AdminUsers />} />
+            <Route path="listeners" element={<AdminListeners />} />
+            <Route path="sessions" element={<AdminSessions />} />
+            <Route path="transactions" element={<AdminTransactions />} />
+            <Route path="withdrawals" element={<AdminWithdrawals />} />
+            <Route path="reports" element={<AdminReports />} />
+            <Route path="leaderboard" element={<AdminLeaderboard />} />
+            <Route path="notifications" element={<AdminNotifications />} />
+            <Route path="cms" element={<AdminCms />} />
+            <Route path="settings" element={<AdminSettings />} />
+            <Route path="audit-logs" element={<AdminAuditLogs />} />
+            <Route path="support-tickets" element={<AdminSupportTickets />} />
+          </Route>
 
-        <Route path="*" element={<Navigate to="/" replace />} />
-      </Routes>
-    </AppDataProvider>
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Routes>
+      </AppDataProvider>
+    </AuthProvider>
   );
 }
