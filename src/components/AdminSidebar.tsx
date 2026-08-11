@@ -1,4 +1,4 @@
-import { NavLink } from "react-router-dom";
+import { NavLink, useNavigate } from "react-router-dom";
 import {
   Heart,
   LayoutDashboard,
@@ -14,7 +14,9 @@ import {
   Settings,
   ScrollText,
   LifeBuoy,
+  LogOut,
 } from "lucide-react";
+import { useAuth } from "../context/AuthContext";
 
 const navItems = [
   { to: "/admin", label: "Dashboard", icon: LayoutDashboard, end: true },
@@ -33,6 +35,14 @@ const navItems = [
 ];
 
 export default function AdminSidebar() {
+  const { user, logout } = useAuth();
+  const navigate = useNavigate();
+
+  const handleLogout = () => {
+    logout();
+    navigate("/");
+  };
+
   return (
     <aside className="flex h-full w-60 shrink-0 flex-col bg-[#1e1b2e]">
       <div className="flex items-center gap-2 px-6 py-6">
@@ -62,6 +72,19 @@ export default function AdminSidebar() {
           </NavLink>
         ))}
       </nav>
+
+      <div className="mx-3 mb-3 flex items-center justify-between border-t border-white/10 pt-3">
+        <span className="truncate text-sm font-medium text-white">
+          {user?.name ?? "Admin"}
+        </span>
+        <button
+          onClick={handleLogout}
+          className="flex items-center gap-1 text-xs font-medium text-gray-400 hover:text-red-400"
+        >
+          <LogOut className="h-3.5 w-3.5" />
+          Logout
+        </button>
+      </div>
     </aside>
   );
 }

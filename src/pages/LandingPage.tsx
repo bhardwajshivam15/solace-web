@@ -1,5 +1,5 @@
 import type { MouseEvent } from "react";
-import { Link } from "react-router-dom";
+import { Link, Navigate } from "react-router-dom";
 import {
   Heart,
   Lock,
@@ -11,6 +11,7 @@ import {
   ChevronDown,
 } from "lucide-react";
 import heroFamily from "../assets/hero-family.png";
+import { useAuth, ROLE_HOME_PATH } from "../context/AuthContext";
 
 const navLinks = [
   { label: "Home", id: null },
@@ -56,6 +57,14 @@ const faqs = [
 ];
 
 export default function LandingPage() {
+  const { user, isAuthenticated } = useAuth();
+
+  // Logged-in users don't need the marketing page or its signup-flavored
+  // CTAs — send them straight to whatever "home" means for their role.
+  if (isAuthenticated && user) {
+    return <Navigate to={ROLE_HOME_PATH[user.role]} replace />;
+  }
+
   const scrollToSection = (id: string | null) => (event: MouseEvent) => {
     event.preventDefault();
     if (!id) {

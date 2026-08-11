@@ -1,4 +1,4 @@
-import { Link, NavLink } from "react-router-dom";
+import { Link, NavLink, useNavigate } from "react-router-dom";
 import {
   Heart,
   Home,
@@ -11,8 +11,10 @@ import {
   UserCircle,
   Settings,
   HelpCircle,
+  LogOut,
 } from "lucide-react";
 import { useAppData } from "../context/AppDataContext";
+import { useAuth } from "../context/AuthContext";
 
 const navItems = [
   { to: "/app/home", label: "Home", icon: Home },
@@ -29,6 +31,13 @@ const navItems = [
 
 export default function Sidebar() {
   const { walletBalance } = useAppData();
+  const { user, logout } = useAuth();
+  const navigate = useNavigate();
+
+  const handleLogout = () => {
+    logout();
+    navigate("/");
+  };
 
   return (
     <aside className="flex h-full w-60 shrink-0 flex-col border-r border-gray-100 bg-white">
@@ -67,6 +76,19 @@ export default function Sidebar() {
         >
           Add Money
         </Link>
+      </div>
+
+      <div className="mx-3 mb-3 flex items-center justify-between border-t border-gray-100 pt-3">
+        <span className="truncate text-sm font-medium text-ink-900">
+          {user?.name ?? "Guest"}
+        </span>
+        <button
+          onClick={handleLogout}
+          className="flex items-center gap-1 text-xs font-medium text-gray-500 hover:text-red-500"
+        >
+          <LogOut className="h-3.5 w-3.5" />
+          Logout
+        </button>
       </div>
     </aside>
   );
