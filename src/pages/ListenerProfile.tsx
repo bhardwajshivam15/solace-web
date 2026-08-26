@@ -1,5 +1,19 @@
 import { useEffect, useRef, useState } from "react";
-import { BadgeCheck, Camera, AlertCircle, CheckCircle2, X } from "lucide-react";
+import {
+  BadgeCheck,
+  Camera,
+  AlertCircle,
+  CheckCircle2,
+  X,
+  FileText,
+  Briefcase,
+  CalendarDays,
+  Tag,
+  Languages as LanguagesIcon,
+  ChevronDown,
+  Check,
+  IndianRupee,
+} from "lucide-react";
 import { categories } from "../data/mockData";
 import { useAuth } from "../context/AuthContext";
 import { apiRequest, resolveAssetUrl, ApiError } from "../lib/apiClient";
@@ -11,13 +25,36 @@ interface ListenerProfileData {
   topics: string[];
   languages: string[];
   experienceYears: number | null;
+  pricePerMinute: number;
   verified: boolean;
   joinedDate: string;
 }
 
+const LANGUAGE_OPTIONS = [
+  "English",
+  "Hindi",
+  "Bengali",
+  "Tamil",
+  "Telugu",
+  "Marathi",
+  "Gujarati",
+  "Kannada",
+  "Malayalam",
+  "Punjabi",
+  "Urdu",
+  "Odia",
+  "Spanish",
+  "French",
+  "German",
+  "Mandarin",
+  "Arabic",
+  "Portuguese",
+];
+
 export default function ListenerProfile() {
   const { token } = useAuth();
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const languageMenuRef = useRef<HTMLDivElement>(null);
 
   const [profile, setProfile] = useState<ListenerProfileData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -29,8 +66,20 @@ export default function ListenerProfile() {
   const [bio, setBio] = useState("");
   const [topics, setTopics] = useState<string[]>([]);
   const [languages, setLanguages] = useState<string[]>([]);
-  const [languageInput, setLanguageInput] = useState("");
+  const [languageMenuOpen, setLanguageMenuOpen] = useState(false);
   const [experienceYears, setExperienceYears] = useState("");
+  const [pricePerMinute, setPricePerMinute] = useState("10");
+
+  useEffect(() => {
+    if (!languageMenuOpen) return;
+    const handleClickOutside = (event: MouseEvent) => {
+      if (languageMenuRef.current && !languageMenuRef.current.contains(event.target as Node)) {
+        setLanguageMenuOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [languageMenuOpen]);
 
   useEffect(() => {
     apiRequest<{ profile: ListenerProfileData }>("/listener/profile", { token })
@@ -40,6 +89,7 @@ export default function ListenerProfile() {
         setTopics(p.topics ?? []);
         setLanguages(p.languages ?? []);
         setExperienceYears(p.experienceYears != null ? String(p.experienceYears) : "");
+        setPricePerMinute(String(p.pricePerMinute));
       })
       .catch((err) => setError(err instanceof ApiError ? err.message : "Could not load your profile."))
       .finally(() => setLoading(false));
@@ -49,16 +99,10 @@ export default function ListenerProfile() {
     setTopics((prev) => (prev.includes(label) ? prev.filter((t) => t !== label) : [...prev, label]));
   };
 
-  const addLanguage = () => {
-    const trimmed = languageInput.trim();
-    if (trimmed && !languages.includes(trimmed)) {
-      setLanguages((prev) => [...prev, trimmed]);
-    }
-    setLanguageInput("");
-  };
-
-  const removeLanguage = (language: string) => {
-    setLanguages((prev) => prev.filter((l) => l !== language));
+  const toggleLanguage = (language: string) => {
+    setLanguages((prev) =>
+      prev.includes(language) ? prev.filter((l) => l !== language) : [...prev, language],
+    );
   };
 
   const handleSave = async () => {
@@ -73,6 +117,7 @@ export default function ListenerProfile() {
           topics,
           languages,
           experienceYears: experienceYears === "" ? null : Number(experienceYears),
+          pricePerMinute: pricePerMinute === "" ? null : Number(pricePerMinute),
         },
       });
       setProfile(updated);
@@ -119,32 +164,38 @@ export default function ListenerProfile() {
 
   return (
     <div className="mx-auto max-w-3xl p-8">
-      <h1 className="text-xl font-bold text-ink-900">Profile</h1>
+      <div>
+        <h1 className="text-xl font-bold text-ink-900">Profile</h1>
+        <p className="mt-1 text-sm text-gray-500">
+          This is what speakers see before they choose to talk to you.
+        </p>
+      </div>
 
       {error && (
-        <div className="mt-4 flex items-start gap-2 rounded-lg bg-red-50 px-3 py-2.5 text-sm text-red-600">
+        <div className="mt-4 flex items-start gap-2 rounded-xl bg-red-50 px-3 py-2.5 text-sm text-red-600">
           <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
           {error}
         </div>
       )}
       {saved && (
-        <div className="mt-4 flex items-center gap-2 rounded-lg bg-green-50 px-3 py-2.5 text-sm text-green-700">
+        <div className="mt-4 flex items-center gap-2 rounded-xl bg-green-50 px-3 py-2.5 text-sm text-green-700">
           <CheckCircle2 className="h-4 w-4" />
           Profile updated.
         </div>
       )}
 
-      <div className="mt-6 rounded-2xl border border-gray-100 bg-white p-5">
-        <div className="flex flex-col items-center text-center">
-          <div className="group relative h-20 w-20">
+      <div className="mt-6 overflow-hidden rounded-3xl border border-gray-100 bg-white shadow-soft">
+        <div className="h-20 bg-gradient-to-r from-brand-500 to-brand-700" />
+        <div className="flex flex-col items-center px-6 pb-6 text-center">
+          <div className="group relative -mt-10 h-20 w-20">
             {profile.avatar ? (
               <img
                 src={resolveAssetUrl(profile.avatar) ?? undefined}
                 alt={profile.name}
-                className="h-20 w-20 rounded-full object-cover"
+                className="h-20 w-20 rounded-full object-cover ring-4 ring-white"
               />
             ) : (
-              <div className="flex h-20 w-20 items-center justify-center rounded-full bg-brand-100 text-xl font-semibold text-brand-700">
+              <div className="flex h-20 w-20 items-center justify-center rounded-full bg-brand-100 text-xl font-semibold text-brand-700 ring-4 ring-white">
                 {profile.name.slice(0, 1).toUpperCase()}
               </div>
             )}
@@ -164,39 +215,72 @@ export default function ListenerProfile() {
               className="hidden"
             />
           </div>
-          <div className="mt-3 flex items-center gap-1">
+          <div className="mt-3 flex items-center gap-1.5">
             <span className="text-lg font-bold text-ink-900">{profile.name}</span>
             {profile.verified && <BadgeCheck className="h-5 w-5 fill-brand-600 text-white" />}
           </div>
-          <p className="text-xs text-gray-400">
-            {uploading ? "Uploading..." : "Click your photo to change it"}
-          </p>
+          {profile.verified && (
+            <span className="mt-1 rounded-full bg-brand-50 px-2.5 py-0.5 text-[11px] font-medium text-brand-700">
+              Verified Listener
+            </span>
+          )}
+          <button
+            onClick={() => fileInputRef.current?.click()}
+            disabled={uploading}
+            className="mt-2 text-xs font-medium text-brand-600 hover:text-brand-700 disabled:opacity-60"
+          >
+            {uploading ? "Uploading…" : "Change photo"}
+          </button>
         </div>
 
-        <div className="mt-6 grid gap-4 sm:grid-cols-2">
-          <div>
-            <label className="text-xs font-medium text-gray-500">Bio</label>
+        <div className="grid gap-5 border-t border-gray-100 px-6 py-6 sm:grid-cols-3">
+          <div className="sm:col-span-2">
+            <label className="flex items-center gap-1.5 text-xs font-medium text-gray-500">
+              <FileText className="h-3.5 w-3.5" />
+              Bio
+            </label>
             <textarea
               value={bio}
               onChange={(event) => setBio(event.target.value)}
-              rows={3}
-              className="mt-1 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm text-ink-900"
+              rows={4}
+              placeholder="Tell speakers a little about yourself"
+              className="mt-1.5 w-full rounded-xl border border-gray-200 px-3.5 py-2.5 text-sm text-ink-900 outline-none transition-colors placeholder:text-gray-400 focus:border-brand-400 focus:ring-2 focus:ring-brand-100"
             />
           </div>
-          <div className="grid grid-cols-2 gap-4 content-start">
+          <div className="space-y-4">
             <div>
-              <label className="text-xs font-medium text-gray-500">Experience (years)</label>
+              <label className="flex items-center gap-1.5 text-xs font-medium text-gray-500">
+                <Briefcase className="h-3.5 w-3.5" />
+                Experience (years)
+              </label>
               <input
                 type="number"
                 min={0}
                 value={experienceYears}
                 onChange={(event) => setExperienceYears(event.target.value)}
-                className="mt-1 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm text-ink-900"
+                className="mt-1.5 w-full rounded-xl border border-gray-200 px-3.5 py-2.5 text-sm text-ink-900 outline-none transition-colors focus:border-brand-400 focus:ring-2 focus:ring-brand-100"
               />
             </div>
             <div>
-              <p className="text-xs font-medium text-gray-500">Joined</p>
-              <p className="mt-1 rounded-lg border border-transparent px-3 py-2 text-sm font-medium text-ink-900">
+              <label className="flex items-center gap-1.5 text-xs font-medium text-gray-500">
+                <IndianRupee className="h-3.5 w-3.5" />
+                Price per minute
+              </label>
+              <input
+                type="number"
+                min={1}
+                value={pricePerMinute}
+                onChange={(event) => setPricePerMinute(event.target.value)}
+                className="mt-1.5 w-full rounded-xl border border-gray-200 px-3.5 py-2.5 text-sm text-ink-900 outline-none transition-colors focus:border-brand-400 focus:ring-2 focus:ring-brand-100"
+              />
+              <p className="mt-1 text-[11px] text-gray-400">What speakers pay to talk to you.</p>
+            </div>
+            <div>
+              <label className="flex items-center gap-1.5 text-xs font-medium text-gray-500">
+                <CalendarDays className="h-3.5 w-3.5" />
+                Joined
+              </label>
+              <p className="mt-1.5 w-full rounded-xl border border-gray-100 bg-gray-50 px-3.5 py-2.5 text-sm font-medium text-ink-900">
                 {new Date(profile.joinedDate).toLocaleDateString("en-IN", {
                   day: "numeric",
                   month: "short",
@@ -207,15 +291,18 @@ export default function ListenerProfile() {
           </div>
         </div>
 
-        <div className="mt-6">
-          <p className="text-xs font-medium text-gray-500">Topics</p>
-          <div className="mt-2 flex flex-wrap gap-2">
+        <div className="border-t border-gray-100 px-6 py-6">
+          <label className="flex items-center gap-1.5 text-xs font-medium text-gray-500">
+            <Tag className="h-3.5 w-3.5" />
+            Topics
+          </label>
+          <div className="mt-2.5 flex flex-wrap gap-2">
             {categories.map((category) => (
               <button
                 key={category.label}
                 type="button"
                 onClick={() => toggleTopic(category.label)}
-                className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
+                className={`rounded-full px-3 py-1.5 text-xs font-medium transition-colors ${
                   topics.includes(category.label)
                     ? "bg-brand-600 text-white"
                     : "bg-gray-100 text-gray-500 hover:bg-gray-200"
@@ -227,51 +314,71 @@ export default function ListenerProfile() {
           </div>
         </div>
 
-        <div className="mt-4">
-          <p className="text-xs font-medium text-gray-500">Languages</p>
-          <div className="mt-2 flex flex-wrap gap-2">
+        <div className="border-t border-gray-100 px-6 py-6">
+          <label className="flex items-center gap-1.5 text-xs font-medium text-gray-500">
+            <LanguagesIcon className="h-3.5 w-3.5" />
+            Languages
+          </label>
+
+          <div ref={languageMenuRef} className="relative mt-1.5">
+            <button
+              type="button"
+              onClick={() => setLanguageMenuOpen((open) => !open)}
+              className="flex w-full items-center justify-between rounded-xl border border-gray-200 px-3.5 py-2.5 text-sm text-ink-900 outline-none transition-colors focus:border-brand-400 focus:ring-2 focus:ring-brand-100"
+            >
+              <span className={languages.length === 0 ? "text-gray-400" : ""}>
+                {languages.length === 0 ? "Select languages" : `${languages.length} selected`}
+              </span>
+              <ChevronDown className={`h-4 w-4 text-gray-400 transition-transform ${languageMenuOpen ? "rotate-180" : ""}`} />
+            </button>
+
+            {languageMenuOpen && (
+              <div className="absolute z-10 mt-1.5 max-h-56 w-full overflow-y-auto rounded-xl border border-gray-100 bg-white py-1.5 shadow-soft">
+                {LANGUAGE_OPTIONS.map((language) => {
+                  const selected = languages.includes(language);
+                  return (
+                    <button
+                      key={language}
+                      type="button"
+                      onClick={() => toggleLanguage(language)}
+                      className="flex w-full items-center justify-between px-3.5 py-2 text-sm text-ink-900 hover:bg-gray-50"
+                    >
+                      {language}
+                      {selected && <Check className="h-4 w-4 text-brand-600" />}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          <div className="mt-3 flex flex-wrap gap-2">
             {languages.map((language) => (
               <span
                 key={language}
-                className="flex items-center gap-1 rounded-full bg-gray-100 px-3 py-1 text-xs font-medium text-gray-600"
+                className="flex items-center gap-1.5 rounded-full bg-gray-100 px-3 py-1.5 text-xs font-medium text-gray-600"
               >
                 {language}
-                <button onClick={() => removeLanguage(language)} className="text-gray-400 hover:text-red-500">
+                <button onClick={() => toggleLanguage(language)} className="text-gray-400 hover:text-red-500">
                   <X className="h-3 w-3" />
                 </button>
               </span>
             ))}
-          </div>
-          <div className="mt-2 flex gap-2">
-            <input
-              value={languageInput}
-              onChange={(event) => setLanguageInput(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === "Enter") {
-                  event.preventDefault();
-                  addLanguage();
-                }
-              }}
-              placeholder="Add a language and press Enter"
-              className="flex-1 rounded-lg border border-gray-200 px-3 py-2 text-sm text-ink-900 placeholder:text-gray-400"
-            />
-            <button
-              type="button"
-              onClick={addLanguage}
-              className="rounded-lg border border-gray-200 px-4 py-2 text-sm font-semibold text-ink-900 hover:bg-gray-50"
-            >
-              Add
-            </button>
+            {languages.length === 0 && (
+              <span className="text-xs text-gray-400">No languages selected yet.</span>
+            )}
           </div>
         </div>
 
-        <button
-          onClick={handleSave}
-          disabled={saving}
-          className="mt-6 rounded-lg bg-brand-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-brand-700 disabled:opacity-60"
-        >
-          {saving ? "Saving..." : "Save Changes"}
-        </button>
+        <div className="flex justify-end border-t border-gray-100 bg-gray-50/60 px-6 py-4">
+          <button
+            onClick={handleSave}
+            disabled={saving}
+            className="rounded-xl bg-brand-600 px-5 py-2.5 text-sm font-semibold text-white shadow-soft transition-colors hover:bg-brand-700 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {saving ? "Saving…" : "Save Changes"}
+          </button>
+        </div>
       </div>
     </div>
   );

@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import {
   Headphones,
@@ -9,9 +9,11 @@ import {
   ChevronRight,
 } from "lucide-react";
 import { categories, dailyQuotes, moods } from "../data/mockData";
-import { listeners } from "../data/mockData";
+import { useAuth } from "../context/AuthContext";
 import { useAppData } from "../context/AppDataContext";
+import { apiRequest, resolveAssetUrl } from "../lib/apiClient";
 import ListenerCard from "../components/ListenerCard";
+import type { Listener } from "../types";
 
 const moodTagMap: Record<string, string> = {
   Happy: "Self Love",
@@ -22,6 +24,54 @@ const moodTagMap: Record<string, string> = {
   Exhausted: "Stress",
 };
 
+interface RecentSession {
+  id: string;
+  listenerId: string;
+  listenerName: string;
+  listenerAvatar: string | null;
+  status: "COMPLETED" | "REJECTED" | "EXPIRED";
+  requestedAt: string;
+  durationSeconds: number | null;
+  speakerAmount: number | null;
+}
+
+interface PublicListener {
+  id: string;
+  name: string;
+  avatar: string | null;
+  bio: string | null;
+  topics: string[];
+  languages: string[];
+  experienceYears: number | null;
+  verified: boolean;
+  online: boolean;
+  pricePerMinute: number;
+  listenerEarningPerMinute: number;
+  platformFeePerMinute: number;
+  rating: number;
+  reviewCount: number;
+}
+
+function toListener(listener: PublicListener): Listener {
+  return {
+    id: listener.id,
+    name: listener.name,
+    avatar: resolveAssetUrl(listener.avatar) ?? initialsAvatar(listener.name),
+    verified: listener.verified,
+    rating: listener.rating,
+    reviewCount: listener.reviewCount,
+    tags: listener.topics,
+    pricePerMinute: listener.pricePerMinute,
+    online: listener.online,
+  };
+}
+
+function initialsAvatar(name: string): string {
+  const initial = name.trim().charAt(0).toUpperCase() || "?";
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="150" height="150"><rect width="150" height="150" fill="#ede9fe"/><text x="50%" y="50%" dy=".35em" text-anchor="middle" font-family="sans-serif" font-size="60" fill="#6d28d9">${initial}</text></svg>`;
+  return `data:image/svg+xml,${encodeURIComponent(svg)}`;
+}
+
 function getGreeting() {
   const hour = new Date().getHours();
   if (hour < 12) return "Good Morning";
@@ -30,22 +80,37 @@ function getGreeting() {
 }
 
 export default function Home() {
-  const { walletBalance, sessions } = useAppData();
+  const { token } = useAuth();
+  const { walletBalance } = useAppData();
   const [selectedMood, setSelectedMood] = useState<string | null>(null);
+  const [listeners, setListeners] = useState<Listener[]>([]);
+  const [loadingListeners, setLoadingListeners] = useState(true);
+  const [recentSessions, setRecentSessions] = useState<RecentSession[]>([]);
   const [quote] = useState(
     () => dailyQuotes[Math.floor(Math.random() * dailyQuotes.length)],
   );
 
   const greeting = useMemo(getGreeting, []);
 
+  useEffect(() => {
+    apiRequest<{ data: PublicListener[] }>("/listeners", { token })
+      .then((response) => setListeners(response.data.map(toListener)))
+      .catch(() => {})
+      .finally(() => setLoadingListeners(false));
+  }, [token]);
+
+  useEffect(() => {
+    apiRequest<{ data: RecentSession[] }>("/speaker/sessions", { token })
+      .then((response) => setRecentSessions(response.data.filter((s) => s.status === "COMPLETED").slice(0, 3)))
+      .catch(() => {});
+  }, [token]);
+
   const recommended = useMemo(() => {
     const tag = selectedMood ? moodTagMap[selectedMood] : null;
     if (!tag) return listeners;
     const matches = listeners.filter((listener) => listener.tags.includes(tag));
     return matches.length > 0 ? matches : listeners;
-  }, [selectedMood]);
-
-  const recentSessions = sessions.slice(0, 3);
+  }, [selectedMood, listeners]);
 
   return (
     <div className="mx-auto max-w-5xl space-y-8 p-8">
@@ -101,13 +166,20 @@ export default function Home() {
           </Link>
         </div>
         <div className="mt-4 flex gap-4 overflow-x-auto pb-2">
-          {recommended.map((listener) => (
-            <div key={listener.id} className="w-44 shrink-0">
-              <Link to={`/app/find-listeners?listener=${listener.id}`}>
-                <ListenerCard listener={listener} active={false} onSelect={() => {}} />
-              </Link>
-            </div>
-          ))}
+          {loadingListeners && (
+            <p className="py-6 text-sm text-gray-400">Loading listeners…</p>
+          )}
+          {!loadingListeners &&
+            recommended.map((listener) => (
+              <div key={listener.id} className="w-44 shrink-0">
+                <Link to={`/app/find-listeners?listener=${listener.id}`}>
+                  <ListenerCard listener={listener} active={false} onSelect={() => {}} />
+                </Link>
+              </div>
+            ))}
+          {!loadingListeners && recommended.length === 0 && (
+            <p className="py-6 text-sm text-gray-400">No listeners available right now.</p>
+          )}
         </div>
       </div>
 
@@ -164,7 +236,7 @@ export default function Home() {
           {recentSessions.map((session) => (
             <div key={session.id} className="flex items-center gap-4 px-4 py-3.5">
               <img
-                src={session.avatar}
+                src={resolveAssetUrl(session.listenerAvatar) ?? initialsAvatar(session.listenerName)}
                 alt={session.listenerName}
                 className="h-10 w-10 rounded-full object-cover"
               />
@@ -173,11 +245,13 @@ export default function Home() {
                   {session.listenerName}
                 </p>
                 <p className="text-xs text-gray-400">
-                  {session.date} · {session.duration}
+                  {new Date(session.requestedAt).toLocaleDateString("en-IN", { day: "numeric", month: "short" })}
+                  {session.durationSeconds != null &&
+                    ` · ${Math.floor(session.durationSeconds / 60)}m ${session.durationSeconds % 60}s`}
                 </p>
               </div>
               <p className="text-sm font-semibold text-ink-900">
-                ₹{session.amount}
+                ₹{session.speakerAmount?.toFixed(2) ?? "—"}
               </p>
               <Link
                 to="/app/sessions"

@@ -57,9 +57,11 @@ export default function ListenerCard({
         <span className="font-semibold text-brand-600">
           ₹{listener.pricePerMinute}/min
         </span>
-        <span className="flex items-center gap-1 text-green-600">
-          <span className="h-1.5 w-1.5 rounded-full bg-green-500" />
-          Online
+        <span
+          className={`flex items-center gap-1 ${listener.online ? "text-green-600" : "text-gray-400"}`}
+        >
+          <span className={`h-1.5 w-1.5 rounded-full ${listener.online ? "bg-green-500" : "bg-gray-300"}`} />
+          {listener.online ? "Online" : "Offline"}
         </span>
       </div>
     </button>

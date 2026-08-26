@@ -11,6 +11,8 @@ import {
   UserCircle,
   Settings,
   LogOut,
+  Bell,
+  HelpCircle,
 } from "lucide-react";
 import { useAppData } from "../context/AppDataContext";
 import { useAuth } from "../context/AuthContext";
@@ -19,12 +21,14 @@ const navItems = [
   { to: "/listener", label: "Dashboard", icon: LayoutDashboard, end: true },
   { to: "/listener/messages", label: "Messages", icon: MessageSquare },
   { to: "/listener/sessions", label: "Sessions", icon: History },
+  { to: "/listener/notifications", label: "Notifications", icon: Bell },
   { to: "/listener/availability", label: "Availability", icon: Radio },
   { to: "/listener/earnings", label: "Earnings", icon: Wallet },
   { to: "/listener/withdrawals", label: "Withdrawals", icon: Banknote },
   { to: "/listener/ratings", label: "Ratings", icon: Star },
   { to: "/listener/profile", label: "Profile", icon: UserCircle },
   { to: "/listener/settings", label: "Settings", icon: Settings },
+  { to: "/listener/support", label: "Help & Support", icon: HelpCircle },
 ];
 
 export default function ListenerSidebar() {

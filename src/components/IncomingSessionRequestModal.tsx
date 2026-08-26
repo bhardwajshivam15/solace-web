@@ -1,0 +1,80 @@
+import { useState } from "react";
+import { Check, X, PhoneCall } from "lucide-react";
+import { useAppData } from "../context/AppDataContext";
+import { ApiError } from "../lib/apiClient";
+
+/** Global overlay — the listener needs to see this regardless of which page they're on. */
+export default function IncomingSessionRequestModal() {
+  const { incomingSessionRequest, acceptSessionRequest, rejectSessionRequest, dismissIncomingSessionRequest } =
+    useAppData();
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  if (!incomingSessionRequest || incomingSessionRequest.status !== "REQUESTED") return null;
+  const request = incomingSessionRequest;
+
+  const handleAccept = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      await acceptSessionRequest(request.id);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Could not accept the request.");
+      setBusy(false);
+    }
+  };
+
+  const handleDecline = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      await rejectSessionRequest(request.id);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Could not decline the request.");
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+      <div className="w-full max-w-sm rounded-2xl bg-white p-6 text-center shadow-xl">
+        <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-brand-50">
+          <PhoneCall className="h-7 w-7 text-brand-600" />
+        </div>
+        <h2 className="mt-4 text-lg font-bold text-ink-900">New Conversation Request</h2>
+        <p className="mt-1 text-sm text-gray-500">
+          <span className="font-semibold text-ink-900">{request.speakerLabel}</span> wants to talk to you.
+        </p>
+
+        {error && <p className="mt-3 text-xs text-red-500">{error}</p>}
+
+        <div className="mt-6 flex gap-3">
+          <button
+            onClick={handleDecline}
+            disabled={busy}
+            className="flex flex-1 items-center justify-center gap-1.5 rounded-xl border border-gray-200 py-2.5 text-sm font-semibold text-gray-600 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            <X className="h-4 w-4" />
+            Decline
+          </button>
+          <button
+            onClick={handleAccept}
+            disabled={busy}
+            className="flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-brand-600 py-2.5 text-sm font-semibold text-white hover:bg-brand-700 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            <Check className="h-4 w-4" />
+            Accept
+          </button>
+        </div>
+
+        <button
+          onClick={dismissIncomingSessionRequest}
+          disabled={busy}
+          className="mt-4 text-xs text-gray-400 hover:text-gray-600"
+        >
+          Dismiss for now
+        </button>
+      </div>
+    </div>
+  );
+}

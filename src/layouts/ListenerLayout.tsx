@@ -1,5 +1,6 @@
 import { Outlet } from "react-router-dom";
 import ListenerSidebar from "../components/ListenerSidebar";
+import IncomingSessionRequestModal from "../components/IncomingSessionRequestModal";
 
 export default function ListenerLayout() {
   return (
@@ -8,6 +9,7 @@ export default function ListenerLayout() {
       <main className="flex-1 overflow-y-auto">
         <Outlet />
       </main>
+      <IncomingSessionRequestModal />
     </div>
   );
 }

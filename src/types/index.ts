@@ -15,19 +15,44 @@ export interface ChatMessage {
   sender: "listener" | "speaker";
   text: string;
   time: string;
-  status?: "sent" | "delivered";
+  status?: "sent" | "delivered" | "read";
 }
 
-export interface Session {
+export type SessionStatus =
+  | "REQUESTED"
+  | "ACCEPTED"
+  | "CONNECTING"
+  | "ACTIVE"
+  | "DISCONNECTED"
+  | "COMPLETED"
+  | "REJECTED"
+  | "EXPIRED";
+
+// Mirrors the backend's SessionDto exactly — the server is the sole source
+// of truth for status/timestamps/billing, this is just its wire shape.
+export interface LiveSession {
   id: string;
+  speakerId: string;
+  listenerId: string;
+  speakerLabel: string;
   listenerName: string;
-  avatar: string;
-  date: string;
-  time: string;
-  duration: string;
-  amount: number;
-  rating: number;
-  status: "completed" | "cancelled";
+  listenerAvatar: string | null;
+  status: SessionStatus;
+  pricePerMinute: number;
+  requestedAt: string;
+  acceptedAt: string | null;
+  acceptDeadlineAt: string | null;
+  startedAt: string | null;
+  endedAt: string | null;
+  durationSeconds: number | null;
+  pausedSeconds: number;
+  speakerConnected: boolean;
+  listenerConnected: boolean;
+  lowBalanceWarnedAt: string | null;
+  endedBy: "SPEAKER" | "LISTENER" | "SYSTEM" | null;
+  speakerAmount: number | null;
+  listenerAmount: number | null;
+  platformCommission: number | null;
 }
 
 export interface Transaction {
@@ -153,6 +178,7 @@ export interface ListenerProfileDetails {
   topics: string[];
   languages: string[];
   experienceYears: number;
+  pricePerMinute: number;
   verified: boolean;
   joinedDate: string;
 }

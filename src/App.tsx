@@ -1,10 +1,12 @@
 import { Navigate, Route, Routes } from "react-router-dom";
 import { AppDataProvider } from "./context/AppDataContext";
 import { AuthProvider } from "./context/AuthContext";
+import RequireRole from "./components/RequireRole";
 import AppLayout from "./layouts/AppLayout";
 import AdminLayout from "./layouts/AdminLayout";
 import ListenerLayout from "./layouts/ListenerLayout";
 import LandingPage from "./pages/LandingPage";
+import LegalPage from "./pages/LegalPage";
 import Login from "./pages/Login";
 import SignUp from "./pages/SignUp";
 import ForgotPassword from "./pages/ForgotPassword";
@@ -26,12 +28,14 @@ import HelpSupport from "./pages/HelpSupport";
 import ListenerDashboard from "./pages/ListenerDashboard";
 import ListenerMessages from "./pages/ListenerMessages";
 import ListenerSessions from "./pages/ListenerSessions";
+import ListenerNotifications from "./pages/ListenerNotifications";
 import Availability from "./pages/Availability";
 import Earnings from "./pages/Earnings";
 import Withdrawals from "./pages/Withdrawals";
 import Ratings from "./pages/Ratings";
 import ListenerProfile from "./pages/ListenerProfile";
 import ListenerSettings from "./pages/ListenerSettings";
+import ListenerSupport from "./pages/ListenerSupport";
 
 // Admin
 import AdminDashboard from "./pages/AdminDashboard";
@@ -58,8 +62,9 @@ export default function App() {
           <Route path="/signup" element={<SignUp />} />
           <Route path="/forgot-password" element={<ForgotPassword />} />
           <Route path="/reset-password" element={<ResetPassword />} />
+          <Route path="/legal/:slug" element={<LegalPage />} />
 
-          <Route path="/app" element={<AppLayout />}>
+          <Route path="/app" element={<RequireRole role="speaker"><AppLayout /></RequireRole>}>
             <Route index element={<Navigate to="home" replace />} />
             <Route path="home" element={<Home />} />
             <Route path="find-listeners" element={<FindListeners />} />
@@ -73,19 +78,21 @@ export default function App() {
             <Route path="help" element={<HelpSupport />} />
           </Route>
 
-          <Route path="/listener" element={<ListenerLayout />}>
+          <Route path="/listener" element={<RequireRole role="listener"><ListenerLayout /></RequireRole>}>
             <Route index element={<ListenerDashboard />} />
             <Route path="messages" element={<ListenerMessages />} />
             <Route path="sessions" element={<ListenerSessions />} />
+            <Route path="notifications" element={<ListenerNotifications />} />
             <Route path="availability" element={<Availability />} />
             <Route path="earnings" element={<Earnings />} />
             <Route path="withdrawals" element={<Withdrawals />} />
             <Route path="ratings" element={<Ratings />} />
             <Route path="profile" element={<ListenerProfile />} />
             <Route path="settings" element={<ListenerSettings />} />
+            <Route path="support" element={<ListenerSupport />} />
           </Route>
 
-          <Route path="/admin" element={<AdminLayout />}>
+          <Route path="/admin" element={<RequireRole role="admin"><AdminLayout /></RequireRole>}>
             <Route index element={<AdminDashboard />} />
             <Route path="users" element={<AdminUsers />} />
             <Route path="listeners" element={<AdminListeners />} />
