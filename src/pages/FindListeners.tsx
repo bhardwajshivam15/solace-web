@@ -26,23 +26,22 @@ interface PublicListener {
   pricePerMinute: number;
   listenerEarningPerMinute: number;
   platformFeePerMinute: number;
+  rating: number;
+  reviewCount: number;
 }
 
-// Real listeners have no ratings backend yet — "New" is shown instead of a
-// fake score until a real ratings system exists (see RatingBadge). Pricing is
-// each listener's own choice; the platform fee is deducted server-side.
+// Pricing is each listener's own choice; the platform fee is deducted
+// server-side. RatingBadge shows "New" itself when reviewCount is 0.
 function toListener(listener: PublicListener): Listener {
   return {
     id: listener.id,
     name: listener.name,
     avatar: resolveAssetUrl(listener.avatar) ?? initialsAvatar(listener.name),
     verified: listener.verified,
-    rating: 0,
-    reviewCount: 0,
+    rating: listener.rating,
+    reviewCount: listener.reviewCount,
     tags: listener.topics,
     pricePerMinute: listener.pricePerMinute,
-    listenerEarningPerMinute: listener.listenerEarningPerMinute,
-    platformFeePerMinute: listener.platformFeePerMinute,
     online: listener.online,
   };
 }

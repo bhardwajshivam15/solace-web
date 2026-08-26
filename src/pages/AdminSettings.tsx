@@ -9,6 +9,9 @@ interface PlatformSettingsData {
   minWithdrawalAmount: number;
   listenerPayoutPerMinute: number;
   supportEmail: string;
+  acceptanceTimeoutSeconds: number;
+  reconnectionGracePeriodSeconds: number;
+  minimumWalletBalance: number;
 }
 
 export default function AdminSettings() {
@@ -125,6 +128,55 @@ export default function AdminSettings() {
                 type="text"
                 value={settings.supportEmail}
                 onChange={(e) => handleEmailChange(e.target.value)}
+                className="mt-1 w-full rounded-xl border border-gray-200 px-4 py-2.5 text-sm text-ink-900 focus:border-brand-400 focus:outline-none"
+              />
+            </div>
+
+            <div className="border-t border-gray-100 pt-4">
+              <p className="text-xs font-semibold uppercase text-gray-400">Live Session Rules</p>
+            </div>
+
+            <div>
+              <label className="text-xs font-medium text-gray-500">
+                Acceptance Timeout (seconds)
+              </label>
+              <p className="text-[11px] text-gray-400">
+                How long a speaker has to join after a listener accepts before the request expires.
+              </p>
+              <input
+                type="number"
+                value={settings.acceptanceTimeoutSeconds}
+                onChange={(e) => handleNumberChange("acceptanceTimeoutSeconds", e.target.value)}
+                className="mt-1 w-full rounded-xl border border-gray-200 px-4 py-2.5 text-sm text-ink-900 focus:border-brand-400 focus:outline-none"
+              />
+            </div>
+
+            <div>
+              <label className="text-xs font-medium text-gray-500">
+                Reconnection Grace Period (seconds)
+              </label>
+              <p className="text-[11px] text-gray-400">
+                How long a dropped session stays paused waiting for both sides to reconnect.
+              </p>
+              <input
+                type="number"
+                value={settings.reconnectionGracePeriodSeconds}
+                onChange={(e) => handleNumberChange("reconnectionGracePeriodSeconds", e.target.value)}
+                className="mt-1 w-full rounded-xl border border-gray-200 px-4 py-2.5 text-sm text-ink-900 focus:border-brand-400 focus:outline-none"
+              />
+            </div>
+
+            <div>
+              <label className="text-xs font-medium text-gray-500">
+                Minimum Wallet Balance (₹)
+              </label>
+              <p className="text-[11px] text-gray-400">
+                A speaker's active session ends automatically once their remaining balance would drop below this.
+              </p>
+              <input
+                type="number"
+                value={settings.minimumWalletBalance}
+                onChange={(e) => handleNumberChange("minimumWalletBalance", e.target.value)}
                 className="mt-1 w-full rounded-xl border border-gray-200 px-4 py-2.5 text-sm text-ink-900 focus:border-brand-400 focus:outline-none"
               />
             </div>

@@ -1,13 +1,15 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { Check, X, Star, PhoneCall, Trophy, Clock } from "lucide-react";
+import { Star, PhoneCall, Trophy, Clock } from "lucide-react";
 import {
   listenerProfile,
   listenerPerformance,
-  listenerReviews,
   todaysSchedule,
 } from "../data/mockData";
 import { useAppData } from "../context/AppDataContext";
+import { useAuth } from "../context/AuthContext";
+import { apiRequest } from "../lib/apiClient";
+import LiveSessionTimer from "../components/LiveSessionTimer";
 
 const earningTabs = ["Today", "Week", "Month", "Lifetime"] as const;
 type EarningTab = (typeof earningTabs)[number];
@@ -19,24 +21,44 @@ const earningKeyMap: Record<EarningTab, "today" | "week" | "month" | "lifetime">
   Lifetime: "lifetime",
 };
 
-const performanceCards = [
-  { label: "Average Rating", value: `★ ${listenerPerformance.averageRating}` },
-  { label: "Acceptance Rate", value: `${listenerPerformance.acceptanceRate}%` },
-  { label: "Response Time", value: listenerPerformance.responseTime },
-  { label: "Completed Sessions", value: listenerPerformance.completedSessions },
-  { label: "Repeat Users", value: listenerPerformance.repeatUsers },
-];
+interface Review {
+  id: string;
+  reviewerLabel: string;
+  rating: number;
+  comment: string | null;
+  createdAt: string;
+}
+
+interface RatingSummary {
+  averageRating: number;
+  reviewCount: number;
+  reviews: Review[];
+}
 
 export default function ListenerDashboard() {
-  const {
-    listenerOnline,
-    toggleListenerOnline,
-    listenerRequests,
-    listenerEarnings,
-    acceptListenerRequest,
-    declineListenerRequest,
-  } = useAppData();
+  const { listenerOnline, toggleListenerOnline, listenerEarnings, liveSessions } = useAppData();
+  const { token } = useAuth();
   const [earningTab, setEarningTab] = useState<EarningTab>("Today");
+  const [ratingSummary, setRatingSummary] = useState<RatingSummary | null>(null);
+
+  useEffect(() => {
+    apiRequest<RatingSummary>("/listener/ratings", { token })
+      .then(setRatingSummary)
+      .catch(() => {});
+  }, [token]);
+
+  const performanceCards = [
+    {
+      label: "Average Rating",
+      value: ratingSummary && ratingSummary.reviewCount > 0 ? `★ ${ratingSummary.averageRating.toFixed(1)}` : "★ —",
+    },
+    { label: "Acceptance Rate", value: `${listenerPerformance.acceptanceRate}%` },
+    { label: "Response Time", value: listenerPerformance.responseTime },
+    { label: "Completed Sessions", value: listenerPerformance.completedSessions },
+    { label: "Repeat Users", value: listenerPerformance.repeatUsers },
+  ];
+
+  const activeSession = Object.values(liveSessions).find((session) => session.status === "ACTIVE");
 
   return (
     <div className="mx-auto max-w-5xl space-y-6 p-8">
@@ -58,63 +80,33 @@ export default function ListenerDashboard() {
         </button>
       </div>
 
-      {listenerOnline && (
+      {activeSession && (
         <div className="flex items-center justify-between rounded-2xl border border-gray-100 bg-white p-5">
           <div className="flex items-center gap-3">
             <div className="flex h-11 w-11 items-center justify-center rounded-full bg-brand-50 text-brand-600">
               <PhoneCall className="h-5 w-5" />
             </div>
             <div>
-              <p className="font-semibold text-ink-900">Anonymous User</p>
-              <p className="text-xs text-gray-400">Active Session · 12:45</p>
+              <p className="font-semibold text-ink-900">{activeSession.speakerLabel}</p>
+              <p className="text-xs text-gray-400">
+                Active Session ·{" "}
+                {activeSession.startedAt && (
+                  <LiveSessionTimer
+                    startedAt={activeSession.startedAt}
+                    pausedSeconds={activeSession.pausedSeconds}
+                  />
+                )}
+              </p>
             </div>
           </div>
           <Link
-            to="/listener/messages"
+            to={`/listener/messages?speaker=${activeSession.speakerId}`}
             className="rounded-xl bg-brand-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-brand-700"
           >
             Join Chat
           </Link>
         </div>
       )}
-
-      <div className="rounded-2xl border border-gray-100 bg-white p-5">
-        <p className="font-semibold text-ink-900">
-          {listenerRequests.length} New Request{listenerRequests.length === 1 ? "" : "s"}
-        </p>
-        <div className="mt-4 space-y-3">
-          {listenerRequests.map((request) => (
-            <div
-              key={request.id}
-              className="flex items-center gap-3 rounded-xl border border-gray-100 px-4 py-3"
-            >
-              <div className="flex-1">
-                <p className="text-sm font-medium text-ink-900">{request.label}</p>
-                <p className="text-xs text-gray-400">
-                  {request.topic} · {request.waitingSince}
-                </p>
-              </div>
-              <button
-                onClick={() => acceptListenerRequest(request.id)}
-                className="flex h-8 w-8 items-center justify-center rounded-full bg-green-50 text-green-600 hover:bg-green-100"
-              >
-                <Check className="h-4 w-4" />
-              </button>
-              <button
-                onClick={() => declineListenerRequest(request.id)}
-                className="flex h-8 w-8 items-center justify-center rounded-full bg-red-50 text-red-500 hover:bg-red-100"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-          ))}
-          {listenerRequests.length === 0 && (
-            <p className="py-6 text-center text-sm text-gray-400">
-              No waiting requests right now.
-            </p>
-          )}
-        </div>
-      </div>
 
       <div className="grid gap-6 lg:grid-cols-2">
         <div className="rounded-2xl border border-gray-100 bg-white p-5">
@@ -197,9 +189,14 @@ export default function ListenerDashboard() {
       </div>
 
       <div className="rounded-2xl border border-gray-100 bg-white p-5">
-        <p className="font-semibold text-ink-900">Latest Reviews</p>
+        <div className="flex items-center justify-between">
+          <p className="font-semibold text-ink-900">Latest Reviews</p>
+          <Link to="/listener/ratings" className="text-xs font-medium text-brand-600 hover:text-brand-700">
+            View all
+          </Link>
+        </div>
         <div className="mt-4 space-y-4">
-          {listenerReviews.map((review) => (
+          {(ratingSummary?.reviews ?? []).slice(0, 3).map((review) => (
             <div key={review.id} className="border-b border-gray-50 pb-4 last:border-0 last:pb-0">
               <div className="flex items-center gap-1">
                 {Array.from({ length: 5 }).map((_, index) => (
@@ -213,10 +210,19 @@ export default function ListenerDashboard() {
                   />
                 ))}
               </div>
-              <p className="mt-1.5 text-sm text-gray-600">{review.text}</p>
-              <p className="mt-1 text-xs text-gray-400">{review.date}</p>
+              {review.comment && <p className="mt-1.5 text-sm text-gray-600">{review.comment}</p>}
+              <p className="mt-1 text-xs text-gray-400">
+                {new Date(review.createdAt).toLocaleDateString("en-IN", {
+                  day: "numeric",
+                  month: "short",
+                  year: "numeric",
+                })}
+              </p>
             </div>
           ))}
+          {ratingSummary && ratingSummary.reviews.length === 0 && (
+            <p className="py-6 text-center text-sm text-gray-400">No reviews yet.</p>
+          )}
         </div>
       </div>
     </div>

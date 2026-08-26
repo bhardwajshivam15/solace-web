@@ -12,7 +12,6 @@ import type {
   ListenerConversation,
   ListenerEarnings,
   ListenerProfileDetails,
-  ListenerRequest,
   ListenerSessionRecord,
   ListenerWithdrawalRecord,
   Mood,
@@ -24,7 +23,6 @@ import type {
   ReportedConversation,
   Review,
   ScheduleItem,
-  Session,
   SpeakerProfile,
   SupportTicket,
   TopListener,
@@ -141,64 +139,6 @@ export const seedConversation: ChatMessage[] = [
     text: "Yeah...",
     time: "10:34 AM",
     status: "delivered",
-  },
-];
-
-export const sessions: Session[] = [
-  {
-    id: "s1",
-    listenerName: "Aarohi",
-    avatar: avatar("47"),
-    date: "12 May, 2024",
-    time: "10:30 AM",
-    duration: "12m 45s",
-    amount: 120,
-    rating: 4.9,
-    status: "completed",
-  },
-  {
-    id: "s2",
-    listenerName: "Kabir",
-    avatar: avatar("12"),
-    date: "11 May, 2024",
-    time: "08:20 PM",
-    duration: "15m 30s",
-    amount: 150,
-    rating: 4.9,
-    status: "completed",
-  },
-  {
-    id: "s3",
-    listenerName: "Meera",
-    avatar: avatar("45"),
-    date: "10 May, 2024",
-    time: "07:15 PM",
-    duration: "16m 05s",
-    amount: 150,
-    rating: 4.9,
-    status: "completed",
-  },
-  {
-    id: "s4",
-    listenerName: "Rohan",
-    avatar: avatar("14"),
-    date: "09 May, 2024",
-    time: "06:00 PM",
-    duration: "10m 10s",
-    amount: 100,
-    rating: 4.8,
-    status: "completed",
-  },
-  {
-    id: "s5",
-    listenerName: "Ishita",
-    avatar: avatar("32"),
-    date: "08 May, 2024",
-    time: "05:40 PM",
-    duration: "5m 50s",
-    amount: 50,
-    rating: 4.9,
-    status: "cancelled",
   },
 ];
 
@@ -320,12 +260,6 @@ export const listenerEarnings: ListenerEarnings = {
   month: 16800,
   lifetime: 92450,
 };
-
-export const listenerRequests: ListenerRequest[] = [
-  { id: "r1", label: "Anonymous User", topic: "Anxiety", waitingSince: "just now" },
-  { id: "r2", label: "Anonymous User", topic: "Relationship", waitingSince: "1 min ago" },
-  { id: "r3", label: "Anonymous User", topic: "Work Stress", waitingSince: "2 min ago" },
-];
 
 export const listenerReviews: Review[] = [
   { id: "rv1", name: "Anonymous", rating: 5, text: "Very patient and kind. Really helped me feel heard.", date: "12 May, 2024" },
