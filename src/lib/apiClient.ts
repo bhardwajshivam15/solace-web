@@ -7,6 +7,12 @@ export function resolveAssetUrl(path: string | null | undefined): string | null 
   return path.startsWith("http") ? path : `${API_BASE_URL}${path}`;
 }
 
+/** The JWT travels as a query param here — browsers can't set a header on a WebSocket upgrade request. */
+export function resolveWsUrl(path: string, token: string): string {
+  const wsBase = API_BASE_URL.replace(/^http/, "ws");
+  return `${wsBase}${path}?token=${encodeURIComponent(token)}`;
+}
+
 export class ApiError extends Error {
   code: string;
   status: number;

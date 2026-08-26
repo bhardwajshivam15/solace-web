@@ -1,4 +1,5 @@
 import type { MouseEvent } from "react";
+import { useEffect, useState } from "react";
 import { Link, Navigate } from "react-router-dom";
 import {
   Heart,
@@ -12,6 +13,7 @@ import {
 } from "lucide-react";
 import heroFamily from "../assets/hero-family.png";
 import { useAuth, ROLE_HOME_PATH } from "../context/AuthContext";
+import { apiRequest } from "../lib/apiClient";
 
 const navLinks = [
   { label: "Home", id: null },
@@ -39,7 +41,10 @@ const steps = [
   },
 ];
 
-const faqs = [
+const DEFAULT_ABOUT_TEXT =
+  "Solace connects people who need to talk with trained, verified listeners — anonymously, securely, and on their own terms. We believe everyone deserves a safe space to be heard.";
+
+const DEFAULT_FAQS = [
   {
     question: "Is my conversation really anonymous?",
     answer:
@@ -56,8 +61,62 @@ const faqs = [
   },
 ];
 
+interface PublicCmsPage {
+  title: string;
+  slug: string;
+  content: string;
+}
+
+interface Faq {
+  question: string;
+  answer: string;
+}
+
+async function fetchPublicPage(slug: string): Promise<PublicCmsPage | null> {
+  try {
+    const data = await apiRequest<{ page: PublicCmsPage }>(`/cms/pages/${slug}`);
+    return data.page;
+  } catch {
+    return null;
+  }
+}
+
+// The CMS stores FAQ content as one text blob — paragraphs separated by a
+// blank line, each starting with "Question? Answer." Split it back into
+// question/answer pairs so the accordion UI keeps working.
+function parseFaqs(content: string): Faq[] {
+  const parsed = content
+    .split(/\n\s*\n/)
+    .map((paragraph) => paragraph.trim())
+    .filter(Boolean)
+    .map((paragraph) => {
+      const splitIndex = paragraph.indexOf("?");
+      if (splitIndex === -1) return null;
+      return {
+        question: paragraph.slice(0, splitIndex + 1).trim(),
+        answer: paragraph.slice(splitIndex + 1).trim(),
+      };
+    })
+    .filter((faq): faq is Faq => faq !== null && faq.answer.length > 0);
+
+  return parsed.length > 0 ? parsed : DEFAULT_FAQS;
+}
+
 export default function LandingPage() {
   const { user, isAuthenticated } = useAuth();
+  const [aboutText, setAboutText] = useState(DEFAULT_ABOUT_TEXT);
+  const [faqs, setFaqs] = useState<Faq[]>(DEFAULT_FAQS);
+
+  useEffect(() => {
+    // Fall back to the hardcoded copy above if the backend is unreachable or
+    // these pages aren't published — the marketing site should never go blank.
+    fetchPublicPage("about-us").then((page) => {
+      if (page) setAboutText(page.content);
+    });
+    fetchPublicPage("faq").then((page) => {
+      if (page) setFaqs(parseFaqs(page.content));
+    });
+  }, []);
 
   // Logged-in users don't need the marketing page or its signup-flavored
   // CTAs — send them straight to whatever "home" means for their role.
@@ -217,11 +276,7 @@ export default function LandingPage() {
       <section id="about" className="scroll-mt-20 bg-gray-50 px-8 py-16 lg:px-16">
         <div className="mx-auto max-w-3xl text-center">
           <h2 className="text-3xl font-bold text-ink-900">About Us</h2>
-          <p className="mt-4 text-gray-500">
-            Solace connects people who need to talk with trained, verified
-            listeners — anonymously, securely, and on their own terms. We
-            believe everyone deserves a safe space to be heard.
-          </p>
+          <p className="mt-4 whitespace-pre-line text-gray-500">{aboutText}</p>
         </div>
       </section>
 
@@ -246,7 +301,18 @@ export default function LandingPage() {
       </section>
 
       <footer className="border-t border-gray-100 px-8 py-8 text-center text-sm text-gray-400 lg:px-16">
-        © 2026 Solace. All rights reserved.
+        <p>© 2026 Solace. All rights reserved.</p>
+        <div className="mt-3 flex items-center justify-center gap-4">
+          <Link to="/legal/terms-of-service" className="hover:text-ink-900">
+            Terms of Service
+          </Link>
+          <Link to="/legal/privacy-policy" className="hover:text-ink-900">
+            Privacy Policy
+          </Link>
+          <Link to="/legal/community-guidelines" className="hover:text-ink-900">
+            Community Guidelines
+          </Link>
+        </div>
       </footer>
     </div>
   );

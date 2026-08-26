@@ -431,6 +431,7 @@ export const listenerProfileDetails: ListenerProfileDetails = {
   topics: ["Relationship", "Anxiety"],
   languages: ["English", "Hindi"],
   experienceYears: 2,
+  pricePerMinute: 10,
   verified: true,
   joinedDate: "3 Jan, 2023",
 };

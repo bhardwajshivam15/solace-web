@@ -4,6 +4,7 @@ import { ChevronLeft, BadgeCheck, Lock, Send, Smile, Heart } from "lucide-react"
 import type { Listener } from "../types";
 import { useAppData } from "../context/AppDataContext";
 import RatingBadge from "./RatingBadge";
+import MessageStatusTicks from "./MessageStatusTicks";
 
 const QUICK_EMOJIS = ["😊", "🙂", "❤️", "👍", "😢", "🙏"];
 
@@ -15,12 +16,19 @@ export default function ChatPanel({
   onBack: () => void;
 }) {
   const navigate = useNavigate();
-  const { conversations, sendMessage, endSession, walletBalance } = useAppData();
+  const { conversations, loadConversation, setActiveThread, sendMessage, endSession, walletBalance } = useAppData();
   const [draft, setDraft] = useState("");
   const [showEmojis, setShowEmojis] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
 
   const messages = conversations[listener.id] ?? [];
+
+  useEffect(() => {
+    loadConversation(listener.id);
+    setActiveThread(listener.id);
+    return () => setActiveThread(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [listener.id]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -133,7 +141,7 @@ export default function ChatPanel({
                       }`}
                     >
                       {message.time}
-                      {message.status && <span>✓</span>}
+                      {message.sender === "speaker" && <MessageStatusTicks status={message.status} />}
                     </div>
                   </div>
                 </div>
@@ -195,11 +203,13 @@ export default function ChatPanel({
               </div>
               <div className="flex justify-between">
                 <dt className="text-gray-500">Listener Earning</dt>
-                <dd className="font-medium text-ink-900">₹7/min</dd>
+                <dd className="font-medium text-ink-900">
+                  ₹{listener.listenerEarningPerMinute ?? listener.pricePerMinute}/min
+                </dd>
               </div>
               <div className="flex justify-between">
                 <dt className="text-gray-500">Platform Fee</dt>
-                <dd className="font-medium text-ink-900">₹3/min</dd>
+                <dd className="font-medium text-ink-900">₹{listener.platformFeePerMinute ?? 0}/min</dd>
               </div>
             </dl>
           </div>

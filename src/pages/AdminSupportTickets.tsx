@@ -1,45 +1,75 @@
-import { useState } from "react";
-import { supportTickets as seedSupportTickets } from "../data/mockData";
-import type { SupportTicket } from "../types";
+import { useEffect, useState } from "react";
+import { AlertCircle, ChevronDown } from "lucide-react";
+import { useAuth } from "../context/AuthContext";
+import { apiRequest, ApiError } from "../lib/apiClient";
 
-const statusStyles: Record<string, string> = {
+type TicketStatus = "Open" | "In Progress" | "Resolved";
+type TicketPriority = "Low" | "Medium" | "High";
+
+interface SupportTicket {
+  id: string;
+  user: string;
+  subject: string;
+  message: string;
+  status: TicketStatus;
+  priority: TicketPriority;
+  createdAt: string;
+}
+
+const statusStyles: Record<TicketStatus, string> = {
   Open: "bg-red-50 text-red-500",
   "In Progress": "bg-amber-50 text-amber-600",
   Resolved: "bg-green-50 text-green-600",
 };
 
-const priorityStyles: Record<string, string> = {
+const priorityStyles: Record<TicketPriority, string> = {
   High: "bg-red-50 text-red-500",
   Medium: "bg-amber-50 text-amber-600",
   Low: "bg-gray-100 text-gray-500",
 };
 
-const nextStatus: Record<SupportTicket["status"], SupportTicket["status"]> = {
-  Open: "In Progress",
-  "In Progress": "Resolved",
-  Resolved: "Resolved",
-};
-
-const actionLabel: Record<SupportTicket["status"], string> = {
-  Open: "Start Progress",
-  "In Progress": "Mark Resolved",
-  Resolved: "Resolved",
-};
-
 export default function AdminSupportTickets() {
-  const [tickets, setTickets] = useState(seedSupportTickets);
+  const { token } = useAuth();
+  const [tickets, setTickets] = useState<SupportTicket[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [updatingId, setUpdatingId] = useState<string | null>(null);
+  const [expandedId, setExpandedId] = useState<string | null>(null);
 
-  const advanceStatus = (id: string) => {
-    setTickets((prev) =>
-      prev.map((ticket) =>
-        ticket.id === id ? { ...ticket, status: nextStatus[ticket.status] } : ticket,
-      ),
-    );
+  useEffect(() => {
+    setLoading(true);
+    apiRequest<{ data: SupportTicket[] }>("/admin/support-tickets", { token })
+      .then((response) => setTickets(response.data))
+      .catch((err) => setError(err instanceof ApiError ? err.message : "Could not load support tickets."))
+      .finally(() => setLoading(false));
+  }, [token]);
+
+  const updateStatus = async (ticket: SupportTicket, status: TicketStatus) => {
+    setError(null);
+    setUpdatingId(ticket.id);
+    try {
+      const { ticket: updated } = await apiRequest<{ ticket: SupportTicket }>(
+        `/admin/support-tickets/${ticket.id}/status`,
+        { method: "PATCH", token, body: { status } },
+      );
+      setTickets((prev) => prev.map((t) => (t.id === ticket.id ? updated : t)));
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Could not update this ticket.");
+    } finally {
+      setUpdatingId(null);
+    }
   };
 
   return (
     <div className="p-8">
       <h1 className="text-xl font-bold text-ink-900">Support Tickets</h1>
+
+      {error && (
+        <div className="mt-4 flex items-start gap-2 rounded-xl bg-red-50 px-3 py-2.5 text-sm text-red-600">
+          <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+          {error}
+        </div>
+      )}
 
       <div className="mt-6 grid grid-cols-2 gap-4 sm:grid-cols-3">
         <div className="rounded-2xl border border-gray-100 bg-white p-5">
@@ -63,36 +93,78 @@ export default function AdminSupportTickets() {
       </div>
 
       <div className="mt-6 space-y-3">
-        {tickets.map((ticket) => (
-          <div
-            key={ticket.id}
-            className="flex items-center gap-3 rounded-2xl border border-gray-100 bg-white px-5 py-4"
-          >
-            <div className="flex-1">
-              <p className="text-sm font-medium text-ink-900">
-                {ticket.subject} <span className="text-gray-400">·</span> {ticket.user}
-              </p>
-              <p className="mt-0.5 truncate text-xs text-gray-400">{ticket.message}</p>
+        {loading && <p className="text-sm text-gray-400">Loading tickets…</p>}
+
+        {!loading && tickets.length === 0 && (
+          <p className="rounded-2xl border border-gray-100 bg-white p-5 text-center text-sm text-gray-400">
+            No support tickets yet.
+          </p>
+        )}
+
+        {tickets.map((ticket) => {
+          const expanded = expandedId === ticket.id;
+          return (
+            <div
+              key={ticket.id}
+              className="rounded-2xl border border-gray-100 bg-white px-5 py-4"
+            >
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={() => setExpandedId(expanded ? null : ticket.id)}
+                  className="flex min-w-0 flex-1 items-start gap-2 text-left"
+                >
+                  <ChevronDown
+                    className={`mt-0.5 h-4 w-4 shrink-0 text-gray-400 transition-transform ${expanded ? "rotate-180" : ""}`}
+                  />
+                  <div className="min-w-0 flex-1">
+                    <p className={`text-sm font-medium text-ink-900 ${expanded ? "" : "truncate"}`}>
+                      {ticket.subject} <span className="text-gray-400">·</span> {ticket.user}
+                    </p>
+                    {!expanded && (
+                      <p className="mt-0.5 truncate text-xs text-gray-400">{ticket.message}</p>
+                    )}
+                  </div>
+                </button>
+                <span
+                  className={`shrink-0 rounded-full px-3 py-1 text-xs font-medium ${priorityStyles[ticket.priority]}`}
+                >
+                  {ticket.priority}
+                </span>
+                <span
+                  className={`shrink-0 rounded-full px-3 py-1 text-xs font-medium ${statusStyles[ticket.status]}`}
+                >
+                  {ticket.status}
+                </span>
+                <div className="flex shrink-0 items-center gap-2">
+                  {ticket.status === "Open" && (
+                    <button
+                      onClick={() => updateStatus(ticket, "In Progress")}
+                      disabled={updatingId === ticket.id}
+                      className="rounded-lg border border-gray-200 px-3 py-1.5 text-xs font-semibold text-ink-900 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40"
+                    >
+                      {updatingId === ticket.id ? "Updating…" : "Start Progress"}
+                    </button>
+                  )}
+                  {ticket.status !== "Resolved" && (
+                    <button
+                      onClick={() => updateStatus(ticket, "Resolved")}
+                      disabled={updatingId === ticket.id}
+                      className="rounded-lg border border-gray-200 px-3 py-1.5 text-xs font-semibold text-ink-900 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40"
+                    >
+                      {updatingId === ticket.id ? "Updating…" : "Mark Resolved"}
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {expanded && (
+                <p className="mt-3 whitespace-pre-line break-words border-t border-gray-100 pt-3 text-sm text-gray-600">
+                  {ticket.message}
+                </p>
+              )}
             </div>
-            <span
-              className={`rounded-full px-3 py-1 text-xs font-medium ${priorityStyles[ticket.priority]}`}
-            >
-              {ticket.priority}
-            </span>
-            <span
-              className={`rounded-full px-3 py-1 text-xs font-medium ${statusStyles[ticket.status]}`}
-            >
-              {ticket.status}
-            </span>
-            <button
-              onClick={() => advanceStatus(ticket.id)}
-              disabled={ticket.status === "Resolved"}
-              className="rounded-lg border border-gray-200 px-3 py-1.5 text-xs font-semibold text-ink-900 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40"
-            >
-              {actionLabel[ticket.status]}
-            </button>
-          </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );

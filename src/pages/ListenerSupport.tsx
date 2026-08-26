@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
-import { AlertCircle, ChevronDown } from "lucide-react";
-import { helpFaqs } from "../data/mockData";
+import { AlertCircle } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import { apiRequest, ApiError } from "../lib/apiClient";
 
@@ -31,7 +30,7 @@ const priorityStyles: Record<TicketPriority, string> = {
 
 const priorityOptions: TicketPriority[] = ["Low", "Medium", "High"];
 
-export default function HelpSupport() {
+export default function ListenerSupport() {
   const { token } = useAuth();
   const [tickets, setTickets] = useState<SupportTicket[]>([]);
   const [loading, setLoading] = useState(true);
@@ -43,7 +42,7 @@ export default function HelpSupport() {
 
   const loadTickets = () => {
     setLoading(true);
-    apiRequest<{ data: SupportTicket[] }>("/speaker/support-tickets", { token })
+    apiRequest<{ data: SupportTicket[] }>("/listener/support-tickets", { token })
       .then((response) => setTickets(response.data))
       .catch((err) => setError(err instanceof ApiError ? err.message : "Could not load your tickets."))
       .finally(() => setLoading(false));
@@ -56,7 +55,7 @@ export default function HelpSupport() {
     setError(null);
     setSubmitting(true);
     try {
-      const { ticket } = await apiRequest<{ ticket: SupportTicket }>("/speaker/support-tickets", {
+      const { ticket } = await apiRequest<{ ticket: SupportTicket }>("/listener/support-tickets", {
         method: "POST",
         token,
         body: { subject: subject.trim(), message: message.trim(), priority },
@@ -83,27 +82,7 @@ export default function HelpSupport() {
         </div>
       )}
 
-      <div className="mt-5">
-        <p className="text-sm font-medium text-gray-500">
-          Frequently Asked Questions
-        </p>
-        <div className="mt-3 space-y-3">
-          {helpFaqs.map((faq) => (
-            <details
-              key={faq.question}
-              className="group rounded-xl border border-gray-100 p-4"
-            >
-              <summary className="flex cursor-pointer list-none items-center justify-between font-medium text-ink-900">
-                {faq.question}
-                <ChevronDown className="h-4 w-4 text-gray-400 transition-transform group-open:rotate-180" />
-              </summary>
-              <p className="mt-2 text-sm text-gray-500">{faq.answer}</p>
-            </details>
-          ))}
-        </div>
-      </div>
-
-      <div className="mt-8">
+      <div className="mt-6">
         <p className="text-sm font-medium text-gray-500">
           Your Support Tickets
         </p>

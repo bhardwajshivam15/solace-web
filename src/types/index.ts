@@ -7,6 +7,8 @@ export interface Listener {
   reviewCount: number;
   tags: string[];
   pricePerMinute: number;
+  listenerEarningPerMinute?: number;
+  platformFeePerMinute?: number;
   online: boolean;
 }
 
@@ -15,7 +17,7 @@ export interface ChatMessage {
   sender: "listener" | "speaker";
   text: string;
   time: string;
-  status?: "sent" | "delivered";
+  status?: "sent" | "delivered" | "read";
 }
 
 export interface Session {
@@ -153,6 +155,7 @@ export interface ListenerProfileDetails {
   topics: string[];
   languages: string[];
   experienceYears: number;
+  pricePerMinute: number;
   verified: boolean;
   joinedDate: string;
 }

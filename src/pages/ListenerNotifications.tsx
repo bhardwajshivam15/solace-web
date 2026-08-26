@@ -21,7 +21,7 @@ const iconMap: Record<NotificationType, typeof Bell> = {
   listener: Headphones,
 };
 
-export default function Notifications() {
+export default function ListenerNotifications() {
   const { token } = useAuth();
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const [loading, setLoading] = useState(true);
@@ -30,7 +30,7 @@ export default function Notifications() {
 
   useEffect(() => {
     setLoading(true);
-    apiRequest<{ data: AppNotification[] }>("/speaker/notifications", { token })
+    apiRequest<{ data: AppNotification[] }>("/listener/notifications", { token })
       .then((response) => setNotifications(response.data))
       .catch((err) => setError(err instanceof ApiError ? err.message : "Could not load notifications."))
       .finally(() => setLoading(false));
@@ -43,7 +43,7 @@ export default function Notifications() {
     if (!notification || notification.read) return;
     setNotifications((prev) => prev.map((n) => (n.id === id ? { ...n, read: true } : n)));
     try {
-      await apiRequest(`/speaker/notifications/${id}/read`, { method: "PATCH", token });
+      await apiRequest(`/listener/notifications/${id}/read`, { method: "PATCH", token });
     } catch {
       setNotifications((prev) => prev.map((n) => (n.id === id ? { ...n, read: false } : n)));
     }
