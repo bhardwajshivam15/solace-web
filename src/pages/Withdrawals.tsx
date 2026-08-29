@@ -15,7 +15,7 @@ const statusStyles: Record<string, string> = {
 };
 
 export default function Withdrawals() {
-  const { listenerEarnings } = useAppData();
+  const { walletBalance } = useAppData();
   const [history, setHistory] = useState<ListenerWithdrawalRecord[]>(
     listenerWithdrawalHistory,
   );
@@ -48,7 +48,7 @@ export default function Withdrawals() {
           <div>
             <p className="text-sm text-brand-100">Available Balance</p>
             <p className="mt-1 text-3xl font-bold">
-              ₹{listenerEarnings.lifetime.toLocaleString("en-IN")}
+              ₹{walletBalance.toLocaleString("en-IN")}
             </p>
           </div>
           <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-white/15">

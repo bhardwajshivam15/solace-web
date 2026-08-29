@@ -3,3 +3,11 @@ dist
 dist-ssr
 *.local
 .DS_Store
+
+# Local env overrides — anything here is meant to be personal/secret and
+# never committed. .env.production stays tracked on purpose: it holds no
+# secret (just the public API base URL) and Vite/Vercel need to read it
+# from the repo at build time.
+.env
+.env.development
+.env.test

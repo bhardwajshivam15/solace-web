@@ -6,6 +6,7 @@ import {
   type ReactNode,
 } from "react";
 import { apiRequest } from "../lib/apiClient";
+import { clearKeys } from "../lib/e2ee";
 
 export type UserRole = "speaker" | "listener" | "admin";
 
@@ -33,6 +34,15 @@ interface RegisterPayload {
   name: string;
   email: string;
   password: string;
+  /** Required when role is "listener" — every listener needs at least one category. */
+  topics?: string[];
+  bio?: string;
+  languages?: string[];
+  pricePerMinute?: number;
+  /** Required (must all be true) when role is "listener". */
+  termsAccepted?: boolean;
+  guidelinesAccepted?: boolean;
+  confidentialityAccepted?: boolean;
 }
 
 interface AuthContextValue {
@@ -95,6 +105,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(null);
     setToken(null);
     localStorage.removeItem(STORAGE_KEY);
+    clearKeys();
   };
 
   const forgotPassword = async (email: string) => {

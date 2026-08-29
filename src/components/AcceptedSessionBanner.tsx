@@ -21,6 +21,9 @@ export default function AcceptedSessionBanner() {
   );
   if (!pending) return null;
 
+  // This component is mounted once globally and just renders null when there's
+  // no pending session — it never actually unmounts, so busy must be reset on
+  // success too, or it stays stuck disabled for every subsequent session.
   const handleJoin = async () => {
     setBusy(true);
     setError(null);
@@ -29,6 +32,7 @@ export default function AcceptedSessionBanner() {
       navigate(`/app/find-listeners?listener=${pending.listenerId}`);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Could not join the conversation.");
+    } finally {
       setBusy(false);
     }
   };

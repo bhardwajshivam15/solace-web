@@ -15,6 +15,8 @@ export interface ChatMessage {
   sender: "listener" | "speaker";
   text: string;
   time: string;
+  /** Raw ISO timestamp — used for grouping messages under date separators (Today/Yesterday/...). */
+  createdAt: string;
   status?: "sent" | "delivered" | "read";
 }
 
@@ -96,6 +98,7 @@ export interface ListenerEarnings {
   week: number;
   month: number;
   lifetime: number;
+  chart: { day: string; value: number }[];
 }
 
 export interface ListenerRequest {
@@ -125,15 +128,6 @@ export interface ReportedConversation {
   reason: string;
   priority: "High" | "Medium" | "Low";
   status?: "Open" | "Reviewing" | "Resolved";
-}
-
-export interface TopListener {
-  id: string;
-  name: string;
-  avatar: string;
-  rating: number;
-  revenue: number;
-  sessions: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -246,28 +240,6 @@ export interface PlatformUser {
   status: "Active" | "Suspended";
 }
 
-export interface AdminListenerRecord {
-  id: string;
-  name: string;
-  avatar: string;
-  rating: number;
-  sessions: number;
-  earnings: number;
-  status: "Online" | "Offline";
-  verified: boolean;
-  joinedDate: string;
-}
-
-export interface PlatformSession {
-  id: string;
-  speaker: string;
-  listener: string;
-  date: string;
-  duration: string;
-  amount: number;
-  status: "completed" | "cancelled" | "ongoing";
-}
-
 export interface PlatformTransaction {
   id: string;
   user: string;
@@ -298,12 +270,4 @@ export interface PlatformSettings {
   minWithdrawalAmount: number;
   listenerPayoutPerMinute: number;
   supportEmail: string;
-}
-
-export interface AuditLogEntry {
-  id: string;
-  admin: string;
-  action: string;
-  target: string;
-  timestamp: string;
 }

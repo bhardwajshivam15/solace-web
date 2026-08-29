@@ -1,21 +1,16 @@
 import type {
   AdminAnnouncement,
-  AdminListenerRecord,
   AppNotification,
-  AuditLogEntry,
   AvailabilitySlot,
   Category,
-  ChatMessage,
   CmsPage,
   Listener,
   ListenerApplication,
   ListenerConversation,
-  ListenerEarnings,
   ListenerProfileDetails,
   ListenerSessionRecord,
   ListenerWithdrawalRecord,
   Mood,
-  PlatformSession,
   PlatformSettings,
   PlatformTransaction,
   PlatformUser,
@@ -25,7 +20,6 @@ import type {
   ScheduleItem,
   SpeakerProfile,
   SupportTicket,
-  TopListener,
   Transaction,
   WithdrawalRequest,
 } from "../types";
@@ -113,35 +107,6 @@ export const chatFilters = [
 
 export const initialWalletBalance = 1250;
 
-export const seedConversation: ChatMessage[] = [
-  {
-    id: "m1",
-    sender: "listener",
-    text: "Hey there! 👋 I'm here to listen. How are you feeling today?",
-    time: "10:30 AM",
-  },
-  {
-    id: "m2",
-    sender: "speaker",
-    text: "I've been feeling really overwhelmed lately and I just needed someone to talk to.",
-    time: "10:32 AM",
-    status: "delivered",
-  },
-  {
-    id: "m3",
-    sender: "listener",
-    text: "It's completely okay to feel that way. Want to tell me more about what's been going on?",
-    time: "10:33 AM",
-  },
-  {
-    id: "m4",
-    sender: "speaker",
-    text: "Yeah...",
-    time: "10:34 AM",
-    status: "delivered",
-  },
-];
-
 export const transactions: Transaction[] = [
   {
     id: "t1",
@@ -187,15 +152,6 @@ export const revenueOverview = [
   { day: "12 May", value: 40000 },
 ];
 
-export const revenueOverviewMonthly = [
-  { day: "Jan", value: 620000 },
-  { day: "Feb", value: 710000 },
-  { day: "Mar", value: 680000 },
-  { day: "Apr", value: 790000 },
-  { day: "May", value: 860000 },
-  { day: "Jun", value: 910000 },
-];
-
 export const withdrawalRequests: WithdrawalRequest[] = [
   { id: "w1", name: "Aarohi", avatar: avatar("47"), date: "12 May, 2024", status: "Pending", amount: 2000, method: "UPI" },
   { id: "w2", name: "Kabir", avatar: avatar("12"), date: "12 May, 2024", status: "Approved", amount: 5000, method: "Bank" },
@@ -236,6 +192,30 @@ export const categories: Category[] = [
   { label: "Self Confidence", emoji: "🌱" },
 ];
 
+// Shared between SignUp.tsx (listener application) and ListenerProfile.tsx
+// (post-approval editing) so the same 18-language list is picked from in
+// both places without drifting apart.
+export const languageOptions = [
+  "English",
+  "Hindi",
+  "Bengali",
+  "Tamil",
+  "Telugu",
+  "Marathi",
+  "Gujarati",
+  "Kannada",
+  "Malayalam",
+  "Punjabi",
+  "Urdu",
+  "Odia",
+  "Spanish",
+  "French",
+  "German",
+  "Mandarin",
+  "Arabic",
+  "Portuguese",
+];
+
 export const dailyQuotes = [
   "It is okay to not be okay.",
   "You don't have to carry it all alone.",
@@ -252,13 +232,6 @@ export const listenerProfile = {
   name: "Aarohi",
   avatar: avatar("47"),
   rank: 12,
-};
-
-export const listenerEarnings: ListenerEarnings = {
-  today: 850,
-  week: 4200,
-  month: 16800,
-  lifetime: 92450,
 };
 
 export const listenerReviews: Review[] = [
@@ -285,22 +258,6 @@ export const listenerPerformance = {
 // Admin dashboard
 // ---------------------------------------------------------------------------
 
-export const sessionsPerDay = [
-  { day: "6 May", value: 980 },
-  { day: "7 May", value: 1120 },
-  { day: "8 May", value: 860 },
-  { day: "9 May", value: 1340 },
-  { day: "10 May", value: 1080 },
-  { day: "11 May", value: 1460 },
-  { day: "12 May", value: 1234 },
-];
-
-export const topListeners: TopListener[] = [
-  { id: "aarohi", name: "Aarohi", avatar: avatar("47"), rating: 4.9, revenue: 18400, sessions: 342 },
-  { id: "kabir", name: "Kabir", avatar: avatar("12"), rating: 4.8, revenue: 15200, sessions: 298 },
-  { id: "meera", name: "Meera", avatar: avatar("45"), rating: 4.9, revenue: 13950, sessions: 265 },
-  { id: "rohan", name: "Rohan", avatar: avatar("14"), rating: 4.8, revenue: 11200, sessions: 210 },
-];
 
 export const reportedConversations: ReportedConversation[] = [
   { id: "rep1", user: "Anonymous #4821", reason: "Inappropriate language", priority: "High" },
@@ -435,26 +392,6 @@ export const platformUsers: PlatformUser[] = [
   { id: "u5", name: "Anonymous #5581", email: "user5581@solace.app", joinedDate: "22 Mar, 2024", sessionsCount: 11, walletBalance: 90, status: "Active" },
 ];
 
-export const adminListeners: AdminListenerRecord[] = topListeners.map((listener, index) => ({
-  id: listener.id,
-  name: listener.name,
-  avatar: listener.avatar,
-  rating: listener.rating,
-  sessions: listener.sessions,
-  earnings: listener.revenue,
-  status: index % 2 === 0 ? "Online" : "Offline",
-  verified: true,
-  joinedDate: ["3 Jan, 2023", "18 Mar, 2023", "2 Jun, 2023", "11 Sep, 2023"][index] ?? "1 Jan, 2023",
-}));
-
-export const platformSessions: PlatformSession[] = [
-  { id: "ps1", speaker: "Anonymous #4821", listener: "Aarohi", date: "12 May, 2024", duration: "12m 45s", amount: 120, status: "completed" },
-  { id: "ps2", speaker: "Anonymous #3390", listener: "Kabir", date: "11 May, 2024", duration: "15m 30s", amount: 150, status: "completed" },
-  { id: "ps3", speaker: "Anonymous #1027", listener: "Meera", date: "10 May, 2024", duration: "16m 05s", amount: 150, status: "completed" },
-  { id: "ps4", speaker: "Anonymous #2214", listener: "Rohan", date: "9 May, 2024", duration: "3m 10s", amount: 0, status: "cancelled" },
-  { id: "ps5", speaker: "Anonymous #5581", listener: "Ishita", date: "12 May, 2024", duration: "6m 20s", amount: 60, status: "ongoing" },
-];
-
 export const platformTransactions: PlatformTransaction[] = [
   { id: "pt1", user: "Anonymous #4821", type: "Top-up", amount: 1000, date: "12 May, 2024", status: "Success" },
   { id: "pt2", user: "Anonymous #4821", type: "Session", amount: 120, date: "12 May, 2024", status: "Success" },
@@ -484,11 +421,3 @@ export const platformSettings: PlatformSettings = {
   listenerPayoutPerMinute: 7,
   supportEmail: "support@solace.app",
 };
-
-export const auditLogs: AuditLogEntry[] = [
-  { id: "al1", admin: "Admin", action: "Approved listener application", target: "Kabir", timestamp: "12 May, 2024 · 09:12 AM" },
-  { id: "al2", admin: "Admin", action: "Rejected withdrawal request", target: "Rohan", timestamp: "11 May, 2024 · 04:45 PM" },
-  { id: "al3", admin: "Admin", action: "Suspended user", target: "Anonymous #1027", timestamp: "28 Feb, 2024 · 11:03 AM" },
-  { id: "al4", admin: "Admin", action: "Published CMS page", target: "About Us", timestamp: "2 May, 2024 · 03:20 PM" },
-  { id: "al5", admin: "Admin", action: "Sent announcement", target: "Scheduled maintenance", timestamp: "10 May, 2024 · 01:00 PM" },
-];

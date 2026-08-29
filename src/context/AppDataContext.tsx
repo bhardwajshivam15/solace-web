@@ -7,10 +7,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import {
-  listenerApplications as seedApplications,
-  listenerEarnings as seedListenerEarnings,
-} from "../data/mockData";
+import { listenerApplications as seedApplications } from "../data/mockData";
 import type {
   ChatMessage,
   ListenerApplication,
@@ -20,6 +17,18 @@ import type {
 } from "../types";
 import { useAuth } from "./AuthContext";
 import { apiRequest, ApiError, resolveWsUrl } from "../lib/apiClient";
+import { ensureKeysRegistered, getSharedKey, encryptText, decryptText } from "../lib/e2ee";
+import ToastStack, { type ChatToast } from "../components/ToastStack";
+
+// Live, in-session-only signal for a conversation-list row: not persisted,
+// not restored on reload — purely "something happened here since I last
+// looked," matching the ask for real-time behavior specifically (like a
+// chat app's live badge), not a durable unread-count feature.
+export interface LiveThreadUpdate {
+  preview: string;
+  at: string;
+  unreadCount: number;
+}
 
 interface AppDataContextValue {
   walletBalance: number;
@@ -29,17 +38,21 @@ interface AppDataContextValue {
   listenerPresence: Record<string, boolean>;
   liveSessions: Record<string, LiveSession>;
   incomingSessionRequest: LiveSession | null;
-  addMoney: (amount: number) => Promise<void>;
+  heldSessionRequests: LiveSession[];
+  liveThreadUpdates: Record<string, LiveThreadUpdate>;
+  liveListenerRatings: Record<string, { rating: number; reviewCount: number }>;
+  updateListenerRating: (listenerId: string, rating: number, reviewCount: number) => void;
+  addMoney: (amount: number, couponCode?: string) => Promise<{ balance: number; bonusApplied: number }>;
   loadConversation: (otherPartyId: string) => void;
   setActiveThread: (otherPartyId: string | null) => void;
-  sendMessage: (otherPartyId: string, text: string) => void;
+  sendMessage: (otherPartyId: string, text: string) => Promise<void>;
   requestSession: (listenerId: string) => Promise<LiveSession>;
   acceptSessionRequest: (sessionId: string) => Promise<LiveSession>;
   rejectSessionRequest: (sessionId: string) => Promise<void>;
   joinSession: (sessionId: string, otherPartyId: string) => Promise<LiveSession>;
   endLiveSession: (sessionId: string, otherPartyId: string) => Promise<LiveSession>;
   loadCurrentSession: (otherPartyId: string) => Promise<void>;
-  dismissIncomingSessionRequest: () => void;
+  holdSessionRequest: (sessionId: string) => void;
   approveApplication: (id: string) => void;
   rejectApplication: (id: string) => void;
   listenerOnline: boolean;
@@ -52,7 +65,8 @@ const AppDataContext = createContext<AppDataContextValue | null>(null);
 interface RawMessage {
   id: string;
   sender: "speaker" | "listener";
-  text: string;
+  ciphertext: string;
+  iv: string;
   delivered: boolean;
   read: boolean;
   createdAt: string;
@@ -68,12 +82,16 @@ interface RawWalletTransaction {
   createdAt: string;
 }
 
-function toChatMessage(message: RawMessage): ChatMessage {
+async function toChatMessage(message: RawMessage, sharedKey: CryptoKey | null): Promise<ChatMessage> {
+  const text = sharedKey
+    ? await decryptText(sharedKey, message.ciphertext, message.iv)
+    : "[Encrypted message]";
   return {
     id: message.id,
     sender: message.sender,
-    text: message.text,
+    text,
     time: new Date(message.createdAt).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" }),
+    createdAt: message.createdAt,
     status: message.read ? "read" : message.delivered ? "delivered" : "sent",
   };
 }
@@ -104,16 +122,65 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
   // Keyed by "the other party's user id" — mirrors `conversations`, so a
   // speaker's map is keyed by listenerId and a listener's by speakerId.
   const [liveSessions, setLiveSessions] = useState<Record<string, LiveSession>>({});
-  // The listener-side "New Conversation Request" overlay — global, not tied
-  // to whichever page the listener happens to be on when it arrives.
-  const [incomingSessionRequest, setIncomingSessionRequest] = useState<LiveSession | null>(null);
+  // The WebSocket effect below only runs once per [user, token] — its
+  // closure would otherwise see whatever liveSessions was at socket-creation
+  // time forever. Kept in sync via the effect right after this declaration.
+  const liveSessionsRef = useRef<Record<string, LiveSession>>({});
+  // Every REQUESTED session currently awaiting this listener's response — a
+  // real queue, not just "the most recent one," so a second request arriving
+  // (or a reload) doesn't silently lose track of one already waiting.
+  const [incomingSessionQueue, setIncomingSessionQueue] = useState<LiveSession[]>([]);
+  // Requests the listener chose "Hold for Later" on — still in the queue,
+  // just not the one shown in the blocking modal right now.
+  const [heldRequestIds, setHeldRequestIds] = useState<Set<string>>(new Set());
+
+  const removeFromIncomingQueue = (sessionId: string) => {
+    setIncomingSessionQueue((prev) => prev.filter((s) => s.id !== sessionId));
+    setHeldRequestIds((prev) => {
+      if (!prev.has(sessionId)) return prev;
+      const next = new Set(prev);
+      next.delete(sessionId);
+      return next;
+    });
+  };
   const loadedThreads = useRef<Set<string>>(new Set());
   // Ref, not state — read from inside the WebSocket handler's closure, which
   // is set up once and would otherwise never see updates to "which thread is
   // currently open on screen."
   const activeThreadRef = useRef<string | null>(null);
   const [listenerOnline, setListenerOnline] = useState(false);
-  const [listenerEarnings] = useState<ListenerEarnings>(seedListenerEarnings);
+  const [listenerEarnings, setListenerEarnings] = useState<ListenerEarnings>({
+    today: 0,
+    week: 0,
+    month: 0,
+    lifetime: 0,
+    chart: [],
+  });
+  const [liveThreadUpdates, setLiveThreadUpdates] = useState<Record<string, LiveThreadUpdate>>({});
+  const [toasts, setToasts] = useState<ChatToast[]>([]);
+  // A speaker's own action (rating a listener) should reflect in their own
+  // UI immediately — no WS push involved, this is just "I just did this,
+  // show me the result now" rather than another user's real-time activity.
+  const [liveListenerRatings, setLiveListenerRatings] = useState<Record<string, { rating: number; reviewCount: number }>>({});
+
+  const dismissToast = (id: string) => setToasts((prev) => prev.filter((t) => t.id !== id));
+
+  const updateListenerRating = (listenerId: string, rating: number, reviewCount: number) => {
+    setLiveListenerRatings((prev) => ({ ...prev, [listenerId]: { rating, reviewCount } }));
+  };
+
+  useEffect(() => {
+    liveSessionsRef.current = liveSessions;
+  }, [liveSessions]);
+
+  // Generates/loads this browser's E2EE keypair and registers the public
+  // half with the server as early as possible after login — fetchThread and
+  // sendMessage also call this defensively, but doing it here up front
+  // avoids any visible delay the first time a chat is opened.
+  useEffect(() => {
+    if (!user || !token) return;
+    ensureKeysRegistered(user.id, token).catch(() => {});
+  }, [user, token]);
 
   useEffect(() => {
     if (user?.role !== "listener") return;
@@ -122,23 +189,28 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
       .catch(() => {});
   }, [user?.role, token]);
 
-  // Catches a request that arrived while the listener wasn't connected yet —
-  // live ones after this are handled by the WebSocket SESSION_REQUESTED push.
+  // Loads the full queue of requests still awaiting a response — catches
+  // anything that arrived while the listener wasn't connected yet, and
+  // restores held requests after a reload; live ones after this are handled
+  // by the WebSocket SESSION_REQUESTED push.
   useEffect(() => {
     if (user?.role !== "listener") return;
-    apiRequest<{ session: LiveSession | null }>("/listener/sessions/pending", { token })
-      .then((response) => {
-        if (response.session) setIncomingSessionRequest(response.session);
-      })
+    apiRequest<{ data: LiveSession[] }>("/listener/sessions/requests", { token })
+      .then((response) => setIncomingSessionQueue(response.data))
       .catch(() => {});
   }, [user?.role, token]);
 
+  // Both speakers and listeners have a real Wallet row (a speaker's balance
+  // decreases from session charges, a listener's increases from earnings) —
+  // one real wallet per user, same shared display state either way.
+  const walletBasePath = user?.role === "listener" ? "/listener/wallet" : "/speaker/wallet";
+
   const refreshWallet = () => {
-    if (user?.role !== "speaker") return;
-    apiRequest<{ balance: number }>("/speaker/wallet", { token })
+    if (!user) return;
+    apiRequest<{ balance: number }>(walletBasePath, { token })
       .then((response) => setWalletBalance(Number(response.balance)))
       .catch(() => {});
-    apiRequest<{ data: RawWalletTransaction[] }>("/speaker/wallet/transactions", { token })
+    apiRequest<{ data: RawWalletTransaction[] }>(`${walletBasePath}/transactions`, { token })
       .then((response) => setTransactions(response.data.map(toTransaction)))
       .catch(() => {});
   };
@@ -146,6 +218,13 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     refreshWallet();
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.role, token]);
+
+  useEffect(() => {
+    if (user?.role !== "listener") return;
+    apiRequest<ListenerEarnings>("/listener/earnings", { token })
+      .then(setListenerEarnings)
+      .catch(() => {});
   }, [user?.role, token]);
 
   const conversationsBasePath = user?.role === "listener" ? "/listener/conversations" : "/speaker/conversations";
@@ -156,14 +235,17 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
   // notifies them. Used both for the first open (loadConversation) and to
   // re-mark-read when a live message arrives while the thread is already
   // the one on screen (see the WebSocket handler below).
-  const fetchThread = (otherPartyId: string) => {
-    apiRequest<{ data: RawMessage[] }>(`${conversationsBasePath}/${otherPartyId}/messages`, { token })
-      .then((response) => {
-        setConversations((prev) => ({ ...prev, [otherPartyId]: response.data.map(toChatMessage) }));
-      })
-      .catch(() => {
-        loadedThreads.current.delete(otherPartyId);
-      });
+  const fetchThread = async (otherPartyId: string) => {
+    if (!user) return;
+    try {
+      await ensureKeysRegistered(user.id, token);
+      const sharedKey = await getSharedKey(otherPartyId, token);
+      const response = await apiRequest<{ data: RawMessage[] }>(`${conversationsBasePath}/${otherPartyId}/messages`, { token });
+      const decrypted = await Promise.all(response.data.map((m) => toChatMessage(m, sharedKey)));
+      setConversations((prev) => ({ ...prev, [otherPartyId]: decrypted }));
+    } catch {
+      loadedThreads.current.delete(otherPartyId);
+    }
   };
 
   const loadConversation = (otherPartyId: string) => {
@@ -174,6 +256,14 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
 
   const setActiveThread = (otherPartyId: string | null) => {
     activeThreadRef.current = otherPartyId;
+    // Opening a thread clears its unread count in the conversation list
+    // immediately, even if messages had piled up before this specific open.
+    if (otherPartyId) {
+      setLiveThreadUpdates((prev) => {
+        if (!prev[otherPartyId]?.unreadCount) return prev;
+        return { ...prev, [otherPartyId]: { ...prev[otherPartyId], unreadCount: 0 } };
+      });
+    }
   };
 
   // Real-time delivery: a message sent to us shows up instantly here without
@@ -189,6 +279,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
       const payload = JSON.parse(event.data) as
         | { type: "message" | "read"; threadWithUserId: string; message: RawMessage | null }
         | { type: "presence"; listenerId: string; online: boolean }
+        | { type: "WALLET_UPDATED"; balance: number; transaction: RawWalletTransaction }
         | {
             type:
               | "SESSION_REQUESTED"
@@ -209,18 +300,62 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
         return;
       }
 
+      if (payload.type === "WALLET_UPDATED") {
+        // Carries the real new balance/transaction directly, rather than just
+        // signalling "go re-fetch" — a follow-up GET fired the instant this
+        // arrives could race the backend transaction's own commit and read a
+        // stale balance; applying the pushed values has no such race.
+        setWalletBalance(payload.balance);
+        setTransactions((prev) => [toTransaction(payload.transaction), ...prev]);
+        return;
+      }
+
       if (payload.type === "message" && payload.message) {
         const message = payload.message;
-        setConversations((prev) => ({
-          ...prev,
-          [payload.threadWithUserId]: [...(prev[payload.threadWithUserId] ?? []), toChatMessage(message)],
-        }));
-        // The thread this arrived in is already open on screen right now —
-        // re-fetch so the backend marks it read and tells the sender.
-        // Otherwise it would sit as "delivered" until the thread is reopened.
-        if (activeThreadRef.current === payload.threadWithUserId) {
-          fetchThread(payload.threadWithUserId);
-        }
+        const threadId = payload.threadWithUserId;
+        (async () => {
+          const sharedKey = await getSharedKey(threadId, token);
+          const chatMessage = await toChatMessage(message, sharedKey);
+          setConversations((prev) => ({
+            ...prev,
+            [threadId]: [...(prev[threadId] ?? []), chatMessage],
+          }));
+
+          const isThreadOpen = activeThreadRef.current === threadId;
+          // The thread this arrived in is already open on screen right now —
+          // re-fetch so the backend marks it read and tells the sender.
+          // Otherwise it would sit as "delivered" until the thread is reopened.
+          if (isThreadOpen) {
+            fetchThread(threadId);
+          }
+
+          // Live "last message" + unread count for the conversation list —
+          // real-time only, not persisted, matching the ask. Count keeps
+          // accumulating across multiple messages until the thread is opened
+          // (setActiveThread resets it to 0), so the badge reflects however
+          // many piled up while away, not just "there's something new."
+          setLiveThreadUpdates((prev) => ({
+            ...prev,
+            [threadId]: {
+              preview: chatMessage.text,
+              at: message.createdAt,
+              unreadCount: isThreadOpen ? 0 : (prev[threadId]?.unreadCount ?? 0) + 1,
+            },
+          }));
+
+          // Only pop a toast when the recipient ISN'T already looking at
+          // this thread — no point notifying about something already on screen.
+          if (!isThreadOpen) {
+            const session = liveSessionsRef.current[threadId];
+            const title = (myRole === "speaker" ? session?.listenerName : session?.speakerLabel) ?? "New message";
+            const to = myRole === "speaker" ? `/app/find-listeners?listener=${threadId}` : `/listener/messages?speaker=${threadId}`;
+            const toastId = `${threadId}-${message.id}`;
+            setToasts((prev) => [...prev, { id: toastId, to, title, preview: chatMessage.text }]);
+            window.setTimeout(() => {
+              setToasts((prev) => prev.filter((t) => t.id !== toastId));
+            }, 5000);
+          }
+        })();
         return;
       }
 
@@ -246,17 +381,18 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
         setLiveSessions((prev) => ({ ...prev, [key]: session }));
 
         if (payload.type === "SESSION_REQUESTED" && myRole === "listener") {
-          setIncomingSessionRequest(session);
+          setIncomingSessionQueue((prev) => (prev.some((s) => s.id === session.id) ? prev : [...prev, session]));
         }
         if (
           (payload.type === "SESSION_EXPIRED" || payload.type === "SESSION_REJECTED") &&
           myRole === "listener"
         ) {
-          setIncomingSessionRequest((prev) => (prev?.id === session.id ? null : prev));
+          removeFromIncomingQueue(session.id);
         }
-        if (payload.type === "SESSION_ENDED") {
-          refreshWallet();
-        }
+        // Wallet balance/transactions on SESSION_ENDED are handled by the
+        // dedicated WALLET_UPDATED push above (fired directly from
+        // WalletService the instant the charge/earning is applied), not
+        // re-fetched here.
       }
     };
 
@@ -264,30 +400,46 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user, token]);
 
-  const addMoney = async (amount: number) => {
-    const response = await apiRequest<{ balance: number }>("/speaker/wallet/topup", {
+  const addMoney = async (amount: number, couponCode?: string) => {
+    const response = await apiRequest<{ balance: number; bonusApplied: number | null }>("/speaker/wallet/topup", {
       method: "POST",
       token,
-      body: { amount },
+      body: { amount, couponCode: couponCode || undefined },
     });
     setWalletBalance(Number(response.balance));
     refreshWallet();
+    return { balance: Number(response.balance), bonusApplied: Number(response.bonusApplied ?? 0) };
   };
 
-  const sendMessage = (otherPartyId: string, text: string) => {
+  const sendMessage = async (otherPartyId: string, text: string) => {
     const trimmed = text.trim();
-    if (!trimmed) return;
-    apiRequest<{ message: RawMessage }>(
-      `${conversationsBasePath}/${otherPartyId}/messages`,
-      { method: "POST", token, body: { text: trimmed } },
-    )
-      .then((response) => {
-        setConversations((prev) => ({
-          ...prev,
-          [otherPartyId]: [...(prev[otherPartyId] ?? []), toChatMessage(response.message)],
-        }));
-      })
-      .catch(() => {});
+    if (!trimmed || !user) return;
+    try {
+      await ensureKeysRegistered(user.id, token);
+      const sharedKey = await getSharedKey(otherPartyId, token);
+      if (!sharedKey) return;
+      const { ciphertext, iv } = await encryptText(sharedKey, trimmed);
+      const response = await apiRequest<{ message: RawMessage }>(
+        `${conversationsBasePath}/${otherPartyId}/messages`,
+        { method: "POST", token, body: { ciphertext, iv } },
+      );
+      // No need to decrypt the echoed-back message — we already have the
+      // plaintext we just typed.
+      const sentMessage: ChatMessage = {
+        id: response.message.id,
+        sender: response.message.sender,
+        text: trimmed,
+        time: new Date(response.message.createdAt).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" }),
+        createdAt: response.message.createdAt,
+        status: response.message.read ? "read" : response.message.delivered ? "delivered" : "sent",
+      };
+      setConversations((prev) => ({
+        ...prev,
+        [otherPartyId]: [...(prev[otherPartyId] ?? []), sentMessage],
+      }));
+    } catch {
+      // matches the existing silent-fail pattern for message sends
+    }
   };
 
   // ---- Live session lifecycle ----
@@ -308,7 +460,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
       token,
     });
     setLiveSessions((prev) => ({ ...prev, [dto.speakerId]: dto }));
-    setIncomingSessionRequest((prev) => (prev?.id === sessionId ? null : prev));
+    removeFromIncomingQueue(sessionId);
     return dto;
   };
 
@@ -318,7 +470,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
       token,
     });
     setLiveSessions((prev) => ({ ...prev, [dto.speakerId]: dto }));
-    setIncomingSessionRequest((prev) => (prev?.id === sessionId ? null : prev));
+    removeFromIncomingQueue(sessionId);
   };
 
   const joinSession = async (sessionId: string, otherPartyId: string): Promise<LiveSession> => {
@@ -349,7 +501,12 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  const dismissIncomingSessionRequest = () => setIncomingSessionRequest(null);
+  // Moves a request into the "held" set — it stays in the queue (visible in
+  // the waiting list, still acceptable/rejectable from there) but no longer
+  // occupies the blocking modal.
+  const holdSessionRequest = (sessionId: string) => {
+    setHeldRequestIds((prev) => new Set(prev).add(sessionId));
+  };
 
   const approveApplication = (id: string) => {
     setApplications((prev) => prev.filter((application) => application.id !== id));
@@ -372,6 +529,11 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     });
   };
 
+  // The modal shows the oldest request that hasn't been held; anything held
+  // stays visible separately in the waiting-list queue.
+  const incomingSessionRequest = incomingSessionQueue.find((s) => !heldRequestIds.has(s.id)) ?? null;
+  const heldSessionRequests = incomingSessionQueue.filter((s) => heldRequestIds.has(s.id));
+
   const value = useMemo(
     () => ({
       walletBalance,
@@ -381,6 +543,10 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
       listenerPresence,
       liveSessions,
       incomingSessionRequest,
+      heldSessionRequests,
+      liveThreadUpdates,
+      liveListenerRatings,
+      updateListenerRating,
       addMoney,
       loadConversation,
       setActiveThread,
@@ -391,7 +557,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
       joinSession,
       endLiveSession,
       loadCurrentSession,
-      dismissIncomingSessionRequest,
+      holdSessionRequest,
       approveApplication,
       rejectApplication,
       listenerOnline,
@@ -406,6 +572,9 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
       listenerPresence,
       liveSessions,
       incomingSessionRequest,
+      heldSessionRequests,
+      liveThreadUpdates,
+      liveListenerRatings,
       listenerOnline,
       listenerEarnings,
       token,
@@ -414,7 +583,10 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
   );
 
   return (
-    <AppDataContext.Provider value={value}>{children}</AppDataContext.Provider>
+    <AppDataContext.Provider value={value}>
+      {children}
+      <ToastStack toasts={toasts} onDismiss={dismissToast} />
+    </AppDataContext.Provider>
   );
 }
 

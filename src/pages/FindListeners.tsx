@@ -20,7 +20,7 @@ interface PublicListener {
   bio: string | null;
   topics: string[];
   languages: string[];
-  experienceYears: number | null;
+  experienceYears: number;
   verified: boolean;
   online: boolean;
   pricePerMinute: number;
@@ -54,7 +54,7 @@ function initialsAvatar(name: string): string {
 
 export default function FindListeners() {
   const { token } = useAuth();
-  const { listenerPresence } = useAppData();
+  const { listenerPresence, liveListenerRatings } = useAppData();
   const [searchParams] = useSearchParams();
   const filterFromUrl = searchParams.get("filter");
   const listenerFromUrl = searchParams.get("listener");
@@ -71,6 +71,13 @@ export default function FindListeners() {
   const [sortBy, setSortBy] = useState<SortOption>("Recommended");
   const [showSortMenu, setShowSortMenu] = useState(false);
 
+  // useState's initial value only runs once — without this, clicking a
+  // "new message" toast while already on this page (for a different or no
+  // listener) wouldn't actually switch which chat is open.
+  useEffect(() => {
+    if (listenerFromUrl) setSelectedId(listenerFromUrl);
+  }, [listenerFromUrl]);
+
   useEffect(() => {
     setLoading(true);
     apiRequest<{ data: PublicListener[] }>("/listeners", { token })
@@ -79,12 +86,18 @@ export default function FindListeners() {
       .finally(() => setLoading(false));
   }, [token]);
 
-  // Overlay live online/offline pushes on top of whatever was true at fetch
-  // time, so a listener toggling status shows up here without a reload.
-  const listenersWithPresence = listeners.map((listener) => ({
-    ...listener,
-    online: listenerPresence[listener.id] ?? listener.online,
-  }));
+  // Overlay live online/offline pushes and just-submitted ratings on top of
+  // whatever was true at fetch time — a listener toggling status, or this
+  // speaker rating them, shows up here without a reload.
+  const listenersWithPresence = listeners.map((listener) => {
+    const liveRating = liveListenerRatings[listener.id];
+    return {
+      ...listener,
+      online: listenerPresence[listener.id] ?? listener.online,
+      rating: liveRating?.rating ?? listener.rating,
+      reviewCount: liveRating?.reviewCount ?? listener.reviewCount,
+    };
+  });
 
   const selectedListener = listenersWithPresence.find((l) => l.id === selectedId) ?? null;
 
@@ -203,7 +216,7 @@ export default function FindListeners() {
         </div>
       </div>
 
-      <div className="flex-1">
+      <div className="min-w-0 flex-1">
         {selectedListener ? (
           <ChatPanel
             listener={selectedListener}

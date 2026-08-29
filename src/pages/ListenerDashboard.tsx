@@ -10,6 +10,7 @@ import { useAppData } from "../context/AppDataContext";
 import { useAuth } from "../context/AuthContext";
 import { apiRequest } from "../lib/apiClient";
 import LiveSessionTimer from "../components/LiveSessionTimer";
+import ToggleSwitch from "../components/ToggleSwitch";
 
 const earningTabs = ["Today", "Week", "Month", "Lifetime"] as const;
 type EarningTab = (typeof earningTabs)[number];
@@ -36,7 +37,7 @@ interface RatingSummary {
 }
 
 export default function ListenerDashboard() {
-  const { listenerOnline, toggleListenerOnline, listenerEarnings, liveSessions } = useAppData();
+  const { listenerOnline, toggleListenerOnline, listenerEarnings, walletBalance, liveSessions } = useAppData();
   const { token } = useAuth();
   const [earningTab, setEarningTab] = useState<EarningTab>("Today");
   const [ratingSummary, setRatingSummary] = useState<RatingSummary | null>(null);
@@ -68,16 +69,17 @@ export default function ListenerDashboard() {
           <p className="mt-1 text-sm text-brand-100">Today's Earnings</p>
           <p className="mt-1 text-3xl font-bold">₹{listenerEarnings.today}</p>
         </div>
-        <button
-          onClick={toggleListenerOnline}
-          className={`flex items-center gap-2 rounded-2xl px-6 py-3 text-sm font-semibold transition-colors ${
-            listenerOnline
-              ? "bg-white text-green-600"
-              : "bg-white/15 text-white"
-          }`}
-        >
-          {listenerOnline ? "🟢 Online" : "🔴 Offline"}
-        </button>
+        <div className="flex items-center gap-3 rounded-2xl bg-white/10 px-5 py-3">
+          <span className="text-sm font-semibold">
+            {listenerOnline ? "Online" : "Offline"}
+          </span>
+          <ToggleSwitch
+            checked={listenerOnline}
+            onChange={toggleListenerOnline}
+            tone="inverted"
+            aria-label="Toggle online status"
+          />
+        </div>
       </div>
 
       {activeSession && (
@@ -134,7 +136,7 @@ export default function ListenerDashboard() {
         <div className="rounded-2xl bg-brand-50 p-5">
           <p className="text-sm text-gray-500">Current Earnings</p>
           <p className="mt-1 text-2xl font-bold text-ink-900">
-            ₹{listenerEarnings.lifetime.toLocaleString("en-IN")}
+            ₹{walletBalance.toLocaleString("en-IN")}
           </p>
           <Link
             to="/listener/withdrawals"

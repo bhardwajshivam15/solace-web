@@ -1,6 +1,8 @@
+import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { revenueOverview, listenerSessionHistory } from "../data/mockData";
 import { useAppData } from "../context/AppDataContext";
+import { useAuth } from "../context/AuthContext";
+import { apiRequest, ApiError } from "../lib/apiClient";
 import RevenueChart from "../components/RevenueChart";
 
 const statCards = [
@@ -10,11 +12,25 @@ const statCards = [
   { label: "Lifetime", key: "lifetime" as const },
 ];
 
+interface SessionHistoryEntry {
+  id: string;
+  speakerLabel: string;
+  status: "COMPLETED" | "REJECTED" | "EXPIRED";
+  endedAt: string | null;
+  listenerAmount: number | null;
+}
+
 export default function Earnings() {
   const { listenerEarnings } = useAppData();
-  const completedSessions = listenerSessionHistory.filter(
-    (session) => session.status === "completed",
-  );
+  const { token } = useAuth();
+  const [completedSessions, setCompletedSessions] = useState<SessionHistoryEntry[]>([]);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    apiRequest<{ data: SessionHistoryEntry[] }>("/listener/sessions", { token })
+      .then((response) => setCompletedSessions(response.data.filter((session) => session.status === "COMPLETED")))
+      .catch((err) => setError(err instanceof ApiError ? err.message : "Could not load your earnings history."));
+  }, [token]);
 
   return (
     <div className="mx-auto max-w-5xl space-y-6 p-8">
@@ -45,10 +61,10 @@ export default function Earnings() {
       <div className="rounded-2xl border border-gray-100 bg-white p-5">
         <p className="font-semibold text-ink-900">Earnings this week</p>
         <div className="mt-4">
-          <RevenueChart data={revenueOverview} />
+          {listenerEarnings.chart.length > 0 && <RevenueChart data={listenerEarnings.chart} />}
         </div>
         <div className="mt-2 flex justify-between text-xs text-gray-400">
-          {revenueOverview.map((point) => (
+          {listenerEarnings.chart.map((point) => (
             <span key={point.day}>{point.day}</span>
           ))}
         </div>
@@ -56,6 +72,7 @@ export default function Earnings() {
 
       <div className="rounded-2xl border border-gray-100 bg-white p-5">
         <p className="font-semibold text-ink-900">Recent earning entries</p>
+        {error && <p className="mt-3 text-sm text-red-500">{error}</p>}
         <div className="mt-4 divide-y divide-gray-100">
           {completedSessions.map((session) => (
             <div
@@ -66,15 +83,23 @@ export default function Earnings() {
                 <p className="text-sm font-medium text-ink-900">
                   {session.speakerLabel}
                 </p>
-                <p className="text-xs text-gray-400">{session.date}</p>
+                <p className="text-xs text-gray-400">
+                  {session.endedAt
+                    ? new Date(session.endedAt).toLocaleDateString("en-IN", {
+                        day: "numeric",
+                        month: "short",
+                        year: "numeric",
+                      })
+                    : "—"}
+                </p>
               </div>
               <p className="text-sm font-semibold text-green-600">
-                +₹{session.earning}
+                +₹{(session.listenerAmount ?? 0).toFixed(2)}
               </p>
             </div>
           ))}
 
-          {completedSessions.length === 0 && (
+          {completedSessions.length === 0 && !error && (
             <p className="py-6 text-center text-sm text-gray-400">
               No earnings recorded yet.
             </p>

@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 import { useAppData } from "../context/AppDataContext";
 import { useAuth } from "../context/AuthContext";
+import ToggleSwitch from "./ToggleSwitch";
 
 const navItems = [
   { to: "/listener", label: "Dashboard", icon: LayoutDashboard, end: true },
@@ -71,17 +72,20 @@ export default function ListenerSidebar() {
         ))}
       </nav>
 
-      <button
-        onClick={toggleListenerOnline}
+      <div
         className={`m-3 flex items-center justify-between rounded-xl px-4 py-3 text-sm font-semibold transition-colors ${
           listenerOnline
             ? "bg-green-50 text-green-600"
             : "bg-gray-100 text-gray-500"
         }`}
       >
-        {listenerOnline ? "🟢 Online" : "🔴 Offline"}
-        <span className="text-xs font-medium underline">Toggle</span>
-      </button>
+        {listenerOnline ? "Online" : "Offline"}
+        <ToggleSwitch
+          checked={listenerOnline}
+          onChange={toggleListenerOnline}
+          aria-label="Toggle online status"
+        />
+      </div>
 
       <div className="mx-3 mb-3 flex items-center justify-between border-t border-gray-100 pt-3">
         <span className="truncate text-sm font-medium text-ink-900">

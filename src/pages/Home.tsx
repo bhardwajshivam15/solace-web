@@ -42,7 +42,7 @@ interface PublicListener {
   bio: string | null;
   topics: string[];
   languages: string[];
-  experienceYears: number | null;
+  experienceYears: number;
   verified: boolean;
   online: boolean;
   pricePerMinute: number;

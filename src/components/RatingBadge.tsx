@@ -19,7 +19,7 @@ export default function RatingBadge({
   return (
     <span className="inline-flex items-center gap-1 text-xs font-medium text-gray-600">
       <Star className="h-3.5 w-3.5 fill-amber-400 text-amber-400" />
-      {rating}
+      {rating.toFixed(1)}
       <span className="text-gray-400">({reviewCount}+)</span>
     </span>
   );

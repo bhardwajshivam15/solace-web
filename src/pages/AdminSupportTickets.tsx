@@ -28,6 +28,23 @@ const priorityStyles: Record<TicketPriority, string> = {
   Low: "bg-gray-100 text-gray-500",
 };
 
+type StatusFilter = "all" | TicketStatus;
+type PriorityFilter = "all" | TicketPriority;
+
+const statusFilterOptions: { value: StatusFilter; label: string }[] = [
+  { value: "all", label: "All" },
+  { value: "Open", label: "Open" },
+  { value: "In Progress", label: "In Progress" },
+  { value: "Resolved", label: "Resolved" },
+];
+
+const priorityFilterOptions: { value: PriorityFilter; label: string }[] = [
+  { value: "all", label: "All" },
+  { value: "High", label: "High" },
+  { value: "Medium", label: "Medium" },
+  { value: "Low", label: "Low" },
+];
+
 export default function AdminSupportTickets() {
   const { token } = useAuth();
   const [tickets, setTickets] = useState<SupportTicket[]>([]);
@@ -35,6 +52,8 @@ export default function AdminSupportTickets() {
   const [error, setError] = useState<string | null>(null);
   const [updatingId, setUpdatingId] = useState<string | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
+  const [priorityFilter, setPriorityFilter] = useState<PriorityFilter>("all");
 
   useEffect(() => {
     setLoading(true);
@@ -43,6 +62,12 @@ export default function AdminSupportTickets() {
       .catch((err) => setError(err instanceof ApiError ? err.message : "Could not load support tickets."))
       .finally(() => setLoading(false));
   }, [token]);
+
+  // Stat cards stay unfiltered (whole platform) — only the list below reacts
+  // to the filters, same convention as the other admin list pages.
+  const visibleTickets = tickets
+    .filter((t) => statusFilter === "all" || t.status === statusFilter)
+    .filter((t) => priorityFilter === "all" || t.priority === priorityFilter);
 
   const updateStatus = async (ticket: SupportTicket, status: TicketStatus) => {
     setError(null);
@@ -92,16 +117,49 @@ export default function AdminSupportTickets() {
         </div>
       </div>
 
-      <div className="mt-6 space-y-3">
+      <div className="mt-6 flex flex-wrap items-center gap-4">
+        <div className="flex items-center gap-1 rounded-lg border border-gray-200 bg-white p-1">
+          {statusFilterOptions.map((option) => (
+            <button
+              key={option.value}
+              onClick={() => setStatusFilter(option.value)}
+              className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
+                statusFilter === option.value
+                  ? "bg-brand-600 text-white"
+                  : "text-gray-500 hover:bg-gray-50"
+              }`}
+            >
+              {option.label}
+            </button>
+          ))}
+        </div>
+        <div className="flex items-center gap-1 rounded-lg border border-gray-200 bg-white p-1">
+          {priorityFilterOptions.map((option) => (
+            <button
+              key={option.value}
+              onClick={() => setPriorityFilter(option.value)}
+              className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
+                priorityFilter === option.value
+                  ? "bg-brand-600 text-white"
+                  : "text-gray-500 hover:bg-gray-50"
+              }`}
+            >
+              {option.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="mt-4 space-y-3">
         {loading && <p className="text-sm text-gray-400">Loading tickets…</p>}
 
-        {!loading && tickets.length === 0 && (
+        {!loading && visibleTickets.length === 0 && (
           <p className="rounded-2xl border border-gray-100 bg-white p-5 text-center text-sm text-gray-400">
-            No support tickets yet.
+            {tickets.length === 0 ? "No support tickets yet." : "No tickets match these filters."}
           </p>
         )}
 
-        {tickets.map((ticket) => {
+        {visibleTickets.map((ticket) => {
           const expanded = expandedId === ticket.id;
           return (
             <div
