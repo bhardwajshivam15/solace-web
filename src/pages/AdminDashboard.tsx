@@ -19,17 +19,12 @@ import {
   UserX,
 } from "lucide-react";
 import {
-  revenueOverview,
-  revenueOverviewMonthly,
-  sessionsPerDay,
   withdrawalRequests as seedWithdrawalRequests,
-  topListeners,
-  platformHealth,
-  reportedConversations,
+  platformHealth as platformHealthMock,
   adminOverviewStats,
 } from "../data/mockData";
 import { useAuth } from "../context/AuthContext";
-import { apiRequest, ApiError } from "../lib/apiClient";
+import { apiRequest, ApiError, resolveAssetUrl } from "../lib/apiClient";
 import RevenueChart from "../components/RevenueChart";
 import SessionsBarChart from "../components/SessionsBarChart";
 
@@ -37,12 +32,82 @@ interface PendingApplication {
   id: string;
   name: string;
   avatar: string | null;
-  topic: string | null;
+  topics: string[];
+}
+
+interface AdminOverview {
+  totalUsers: number;
+  activeListeners: number;
+  todaysSessions: number;
+  todaysRevenue: number;
+  pendingApprovals: number;
+  onlineUsers: number;
+  onlineListeners: number;
+  reportedConversations: number;
+}
+
+interface ConversationReport {
+  id: string;
+  reportedByName: string;
+  reportedUserName: string;
+  reason: string;
+  status: "Open" | "Reviewing" | "Resolved";
+  priority: "High" | "Medium" | "Low";
+}
+
+interface LeaderboardEntry {
+  listenerId: string;
+  name: string;
+  avatarUrl: string | null;
+  rating: number;
+  reviewCount: number;
+  revenue: number;
+  sessionCount: number;
+}
+
+interface PlatformHealth {
+  avgResponseTimeSeconds: number | null;
+  avgSessionDurationSeconds: number | null;
+  avgRating: number;
+  systemStatus: string;
+}
+
+interface ChartPoint {
+  day: string;
+  value: number;
+}
+
+interface RevenueOverview {
+  weekly: ChartPoint[];
+  monthly: ChartPoint[];
+}
+
+interface SessionAnalytics {
+  daily: ChartPoint[];
+}
+
+const TOP_LISTENERS_LIMIT = 5;
+
+function initialsAvatar(name: string): string {
+  const initial = name.trim().charAt(0).toUpperCase() || "?";
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="150" height="150"><rect width="150" height="150" fill="#ede9fe"/><text x="50%" y="50%" dy=".35em" text-anchor="middle" font-family="sans-serif" font-size="60" fill="#6d28d9">${initial}</text></svg>`;
+  return `data:image/svg+xml,${encodeURIComponent(svg)}`;
+}
+
+// Matches the original mock's style ("22s", "13m 40s") — omits the minutes
+// segment entirely when it's zero rather than always showing "0m Xs".
+function formatDurationHuman(seconds: number | null): string {
+  if (seconds == null) return "—";
+  const total = Math.round(seconds);
+  const minutes = Math.floor(total / 60);
+  const secs = total % 60;
+  return minutes === 0 ? `${secs}s` : `${minutes}m ${secs}s`;
 }
 
 function ApplicationAvatar({ name, avatar }: { name: string; avatar: string | null }) {
-  if (avatar) {
-    return <img src={avatar} alt={name} className="h-9 w-9 rounded-full object-cover" />;
+  const resolvedAvatar = resolveAssetUrl(avatar);
+  if (resolvedAvatar) {
+    return <img src={resolvedAvatar} alt={name} className="h-9 w-9 rounded-full object-cover" />;
   }
   const initials = name
     .split(" ")
@@ -57,17 +122,23 @@ function ApplicationAvatar({ name, avatar }: { name: string; avatar: string | nu
   );
 }
 
-const stats = [
-  { label: "Total Users", value: adminOverviewStats.totalUsers.toLocaleString("en-IN"), icon: Users },
-  { label: "Active Listeners", value: adminOverviewStats.activeListeners.toLocaleString("en-IN"), icon: Headphones },
-  { label: "Today's Sessions", value: adminOverviewStats.todaysSessions.toLocaleString("en-IN"), icon: History },
-  { label: "Today's Revenue", value: `₹ ${adminOverviewStats.todaysRevenue.toLocaleString("en-IN")}`, icon: IndianRupee },
-  { label: "Pending Withdrawals", value: adminOverviewStats.pendingWithdrawals, icon: Banknote },
-  { label: "Pending Approvals", value: adminOverviewStats.pendingApprovals, icon: UserCheck },
-  { label: "Online Users", value: adminOverviewStats.onlineUsers.toLocaleString("en-IN"), icon: Wifi },
-  { label: "Online Listeners", value: adminOverviewStats.onlineListeners.toLocaleString("en-IN"), icon: Radio },
-  { label: "Reported Conversations", value: adminOverviewStats.reportedConversations, icon: Flag },
-];
+// Pending Withdrawals is the only card still on mock data — there's no real
+// withdrawal-payout backend yet (not just a missing endpoint, no
+// entity/table exists), unlike everything else here which now reads real
+// platform data (Reported Conversations included, via the new report package).
+function buildStats(overview: AdminOverview | null) {
+  return [
+    { label: "Total Users", value: overview ? overview.totalUsers.toLocaleString("en-IN") : "—", icon: Users },
+    { label: "Active Listeners", value: overview ? overview.activeListeners.toLocaleString("en-IN") : "—", icon: Headphones },
+    { label: "Today's Sessions", value: overview ? overview.todaysSessions.toLocaleString("en-IN") : "—", icon: History },
+    { label: "Today's Revenue", value: overview ? `₹ ${overview.todaysRevenue.toFixed(2)}` : "—", icon: IndianRupee },
+    { label: "Pending Withdrawals", value: adminOverviewStats.pendingWithdrawals, icon: Banknote },
+    { label: "Pending Approvals", value: overview ? overview.pendingApprovals.toLocaleString("en-IN") : "—", icon: UserCheck },
+    { label: "Online Users", value: overview ? overview.onlineUsers.toLocaleString("en-IN") : "—", icon: Wifi },
+    { label: "Online Listeners", value: overview ? overview.onlineListeners.toLocaleString("en-IN") : "—", icon: Radio },
+    { label: "Reported Conversations", value: overview ? overview.reportedConversations.toLocaleString("en-IN") : "—", icon: Flag },
+  ];
+}
 
 const statusStyles: Record<string, string> = {
   Pending: "bg-amber-50 text-amber-600",
@@ -81,19 +152,23 @@ const priorityStyles: Record<string, string> = {
   Low: "bg-gray-100 text-gray-500",
 };
 
-const periods = {
-  "This Week": revenueOverview,
-  "This Month": revenueOverviewMonthly,
-} as const;
+const periodOptions = ["This Week", "This Month"] as const;
 
-type Period = keyof typeof periods;
+type Period = (typeof periodOptions)[number];
 
 const quickActions = [
-  { label: "Approve Listener", icon: UserCheck, to: "/admin/listeners" },
+  // Was labeled "Approve Listener" but linked to the active/suspend listing,
+  // which has no approve/reject action at all — that only exists on this
+  // same Dashboard's "Listener Applications" card and its detail page.
+  // Relabeled to match what this destination actually does.
+  { label: "Manage Listeners", icon: UserCheck, to: "/admin/listeners" },
   { label: "Suspend User", icon: UserX, to: "/admin/users" },
-  { label: "Send Announcement", icon: Megaphone, to: "/admin/settings" },
-  { label: "Create Coupon", icon: Ticket, to: "/admin/settings" },
-  { label: "View Analytics", icon: BarChart3, to: "/admin/reports" },
+  { label: "Send Announcement", icon: Megaphone, to: "/admin/notifications" },
+  { label: "Create Coupon", icon: Ticket, to: "/admin/coupons" },
+  // Was linking to /admin/reports (the conversation-report queue, unrelated
+  // to analytics) — /admin/sessions has the real session-level stats
+  // (completed/ongoing/cancelled counts, filtering).
+  { label: "View Analytics", icon: BarChart3, to: "/admin/sessions" },
 ];
 
 export default function AdminDashboard() {
@@ -106,12 +181,74 @@ export default function AdminDashboard() {
   const [applicationsLoading, setApplicationsLoading] = useState(true);
   const [applicationsError, setApplicationsError] = useState<string | null>(null);
 
+  const [overview, setOverview] = useState<AdminOverview | null>(null);
+
+  const [reports, setReports] = useState<ConversationReport[]>([]);
+  const [reportsUpdatingId, setReportsUpdatingId] = useState<string | null>(null);
+
+  const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
+
+  const [platformHealth, setPlatformHealth] = useState<PlatformHealth | null>(null);
+
+  const [revenueOverview, setRevenueOverview] = useState<RevenueOverview | null>(null);
+  const [sessionAnalytics, setSessionAnalytics] = useState<SessionAnalytics | null>(null);
+
+  useEffect(() => {
+    apiRequest<RevenueOverview>("/admin/revenue-overview", { token })
+      .then(setRevenueOverview)
+      .catch(() => {});
+  }, [token]);
+
+  useEffect(() => {
+    apiRequest<SessionAnalytics>("/admin/session-analytics", { token })
+      .then(setSessionAnalytics)
+      .catch(() => {});
+  }, [token]);
+
   useEffect(() => {
     apiRequest<{ data: PendingApplication[] }>("/admin/listener-applications", { token })
       .then((response) => setApplications(response.data))
       .catch((err) => setApplicationsError(err instanceof ApiError ? err.message : "Could not load applications."))
       .finally(() => setApplicationsLoading(false));
   }, [token]);
+
+  useEffect(() => {
+    apiRequest<AdminOverview>("/admin/overview", { token })
+      .then(setOverview)
+      .catch(() => {});
+  }, [token]);
+
+  useEffect(() => {
+    apiRequest<{ data: ConversationReport[] }>("/admin/reports", { token })
+      .then((response) => setReports(response.data.filter((r) => r.status === "Open")))
+      .catch(() => {});
+  }, [token]);
+
+  useEffect(() => {
+    apiRequest<{ data: LeaderboardEntry[] }>("/admin/leaderboard", { token })
+      .then((response) => setLeaderboard(response.data.slice(0, TOP_LISTENERS_LIMIT)))
+      .catch(() => {});
+  }, [token]);
+
+  useEffect(() => {
+    apiRequest<PlatformHealth>("/admin/platform-health", { token })
+      .then(setPlatformHealth)
+      .catch(() => {});
+  }, [token]);
+
+  const stats = buildStats(overview);
+
+  const resolveReport = async (id: string) => {
+    setReportsUpdatingId(id);
+    try {
+      await apiRequest(`/admin/reports/${id}/status`, { method: "PATCH", token, body: { status: "RESOLVED" } });
+      setReports((prev) => prev.filter((r) => r.id !== id));
+    } catch {
+      // surfaced on the dedicated Reports page if this silently fails here
+    } finally {
+      setReportsUpdatingId(null);
+    }
+  };
 
   const approveApplication = async (id: string) => {
     try {
@@ -131,7 +268,7 @@ export default function AdminDashboard() {
     }
   };
 
-  const activeData = periods[period];
+  const activeData = revenueOverview ? (period === "This Week" ? revenueOverview.weekly : revenueOverview.monthly) : [];
 
   const setWithdrawalStatus = (id: string, status: "Approved" | "Rejected") => {
     setWithdrawals((prev) =>
@@ -182,7 +319,7 @@ export default function AdminDashboard() {
               </button>
               {periodMenuOpen && (
                 <div className="absolute right-0 z-10 mt-1 w-32 rounded-lg border border-gray-100 bg-white p-1 shadow-soft">
-                  {(Object.keys(periods) as Period[]).map((option) => (
+                  {periodOptions.map((option) => (
                     <button
                       key={option}
                       onClick={() => {
@@ -202,19 +339,29 @@ export default function AdminDashboard() {
               )}
             </div>
           </div>
-          <RevenueChart data={activeData} />
-          <div className="mt-2 flex justify-between text-xs text-gray-400">
-            {activeData.map((point) => (
-              <span key={point.day}>{point.day}</span>
-            ))}
-          </div>
+          {activeData.length > 0 ? (
+            <>
+              <RevenueChart data={activeData} />
+              <div className="mt-2 flex justify-between text-xs text-gray-400">
+                {activeData.map((point) => (
+                  <span key={point.day}>{point.day}</span>
+                ))}
+              </div>
+            </>
+          ) : (
+            <p className="py-14 text-center text-sm text-gray-400">Loading...</p>
+          )}
         </div>
 
         <div className="rounded-2xl border border-gray-100 bg-white p-5">
           <p className="font-semibold text-ink-900">Session Analytics</p>
           <p className="text-xs text-gray-400">Sessions per day</p>
           <div className="mt-4">
-            <SessionsBarChart data={sessionsPerDay} />
+            {sessionAnalytics ? (
+              <SessionsBarChart data={sessionAnalytics.daily} />
+            ) : (
+              <p className="py-14 text-center text-sm text-gray-400">Loading...</p>
+            )}
           </div>
         </div>
       </div>
@@ -223,27 +370,31 @@ export default function AdminDashboard() {
         <div className="rounded-2xl border border-gray-100 bg-white p-5">
           <p className="font-semibold text-ink-900">Top Listeners</p>
           <div className="mt-4 space-y-4">
-            {topListeners.map((listener, index) => (
-              <div key={listener.id} className="flex items-center gap-3">
+            {leaderboard.map((entry, index) => (
+              <div key={entry.listenerId} className="flex items-center gap-3">
                 <span className="w-4 text-xs font-semibold text-gray-400">
                   {index + 1}
                 </span>
                 <img
-                  src={listener.avatar}
-                  alt={listener.name}
+                  src={resolveAssetUrl(entry.avatarUrl) ?? initialsAvatar(entry.name)}
+                  alt={entry.name}
                   className="h-9 w-9 rounded-full object-cover"
                 />
                 <div className="flex-1">
-                  <p className="text-sm font-medium text-ink-900">{listener.name}</p>
+                  <p className="text-sm font-medium text-ink-900">{entry.name}</p>
                   <p className="text-xs text-gray-400">
-                    {listener.sessions} sessions · ★ {listener.rating}
+                    {entry.sessionCount} sessions · ★ {entry.rating.toFixed(1)}
                   </p>
                 </div>
                 <p className="text-sm font-semibold text-ink-900">
-                  ₹{listener.revenue.toLocaleString("en-IN")}
+                  ₹{entry.revenue.toLocaleString("en-IN")}
                 </p>
               </div>
             ))}
+
+            {leaderboard.length === 0 && (
+              <p className="py-6 text-center text-sm text-gray-400">No listener activity yet.</p>
+            )}
           </div>
         </div>
 
@@ -253,31 +404,31 @@ export default function AdminDashboard() {
             <div>
               <p className="text-xs text-gray-500">Avg. Response Time</p>
               <p className="mt-1 text-lg font-bold text-ink-900">
-                {platformHealth.avgResponseTime}
+                {formatDurationHuman(platformHealth?.avgResponseTimeSeconds ?? null)}
               </p>
             </div>
             <div>
               <p className="text-xs text-gray-500">Avg. Session Duration</p>
               <p className="mt-1 text-lg font-bold text-ink-900">
-                {platformHealth.avgSessionDuration}
+                {formatDurationHuman(platformHealth?.avgSessionDurationSeconds ?? null)}
               </p>
             </div>
             <div>
               <p className="text-xs text-gray-500">Avg. Rating</p>
               <p className="mt-1 text-lg font-bold text-ink-900">
-                ★ {platformHealth.avgRating}
+                ★ {platformHealth ? platformHealth.avgRating.toFixed(1) : "—"}
               </p>
             </div>
             <div>
               <p className="text-xs text-gray-500">Failed Payments</p>
               <p className="mt-1 text-lg font-bold text-red-500">
-                {platformHealth.failedPayments}
+                {platformHealthMock.failedPayments}
               </p>
             </div>
           </div>
           <div className="mt-4 flex items-center gap-2 rounded-xl bg-green-50 px-3 py-2 text-sm font-medium text-green-600">
             <span className="h-2 w-2 rounded-full bg-green-500" />
-            System {platformHealth.systemStatus}
+            System {platformHealth?.systemStatus ?? "—"}
           </div>
         </div>
       </div>
@@ -344,13 +495,20 @@ export default function AdminDashboard() {
             {!applicationsLoading &&
               applications.map((application) => (
                 <div key={application.id} className="flex items-center gap-3">
-                  <ApplicationAvatar name={application.name} avatar={application.avatar} />
-                  <div className="flex-1">
-                    <p className="text-sm font-medium text-ink-900">
-                      {application.name}
-                    </p>
-                    <p className="text-xs text-gray-400">{application.topic ?? "Listener applicant"}</p>
-                  </div>
+                  <Link
+                    to={`/admin/listener-applications/${application.id}`}
+                    className="flex min-w-0 flex-1 items-center gap-3 rounded-lg hover:bg-gray-50"
+                  >
+                    <ApplicationAvatar name={application.name} avatar={application.avatar} />
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-medium text-ink-900">
+                        {application.name}
+                      </p>
+                      <p className="truncate text-xs text-gray-400">
+                        {application.topics.length > 0 ? application.topics.join(", ") : "Listener applicant"}
+                      </p>
+                    </div>
+                  </Link>
                   <button
                     onClick={() => approveApplication(application.id)}
                     className="flex h-7 w-7 items-center justify-center rounded-full bg-green-50 text-green-600 hover:bg-green-100"
@@ -378,13 +536,16 @@ export default function AdminDashboard() {
       <div className="mt-6 rounded-2xl border border-gray-100 bg-white p-5">
         <p className="font-semibold text-ink-900">Reports Queue</p>
         <div className="mt-4 space-y-3">
-          {reportedConversations.map((report) => (
+          {reports.map((report) => (
             <div
               key={report.id}
               className="flex items-center gap-3 rounded-xl border border-gray-100 px-4 py-3"
             >
               <div className="flex-1">
-                <p className="text-sm font-medium text-ink-900">{report.user}</p>
+                <p className="text-sm font-medium text-ink-900">
+                  {report.reportedUserName}
+                  <span className="ml-2 font-normal text-gray-400">by {report.reportedByName}</span>
+                </p>
                 <p className="text-xs text-gray-400">{report.reason}</p>
               </div>
               <span
@@ -394,6 +555,13 @@ export default function AdminDashboard() {
               >
                 {report.priority}
               </span>
+              <button
+                onClick={() => resolveReport(report.id)}
+                disabled={reportsUpdatingId === report.id}
+                className="rounded-lg border border-green-200 px-3 py-1.5 text-xs font-semibold text-green-600 hover:bg-green-50 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                Resolve
+              </button>
               <Link
                 to="/admin/reports"
                 className="rounded-lg border border-gray-200 px-3 py-1.5 text-xs font-semibold text-ink-900 hover:bg-gray-50"
@@ -402,6 +570,10 @@ export default function AdminDashboard() {
               </Link>
             </div>
           ))}
+
+          {reports.length === 0 && (
+            <p className="py-6 text-center text-sm text-gray-400">No open reports.</p>
+          )}
         </div>
       </div>
 

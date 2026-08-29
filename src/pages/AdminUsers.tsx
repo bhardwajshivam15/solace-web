@@ -20,12 +20,29 @@ const roleStyles: Record<Role, string> = {
   admin: "bg-gray-100 text-gray-600",
 };
 
+type RoleFilter = "all" | "speaker" | "listener";
+type StatusFilter = "all" | "active" | "suspended";
+
+const roleFilterOptions: { value: RoleFilter; label: string }[] = [
+  { value: "all", label: "All" },
+  { value: "speaker", label: "Speakers" },
+  { value: "listener", label: "Listeners" },
+];
+
+const statusFilterOptions: { value: StatusFilter; label: string }[] = [
+  { value: "all", label: "All" },
+  { value: "active", label: "Active" },
+  { value: "suspended", label: "Suspended" },
+];
+
 export default function AdminUsers() {
   const { token } = useAuth();
   const [users, setUsers] = useState<PlatformUser[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [updatingId, setUpdatingId] = useState<string | null>(null);
+  const [roleFilter, setRoleFilter] = useState<RoleFilter>("all");
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
 
   useEffect(() => {
     setLoading(true);
@@ -34,6 +51,17 @@ export default function AdminUsers() {
       .catch((err) => setError(err instanceof ApiError ? err.message : "Could not load users."))
       .finally(() => setLoading(false));
   }, [token]);
+
+  // Admin accounts aren't a "user" to manage here — this page is for
+  // speaker/listener moderation only, so admin never appears in the list.
+  const nonAdminUsers = users.filter((u) => u.role !== "admin");
+
+  // Stat cards stay unfiltered (always the whole platform) — only the list
+  // below reacts to the role/status filters, so filtering never makes the
+  // summary numbers look inconsistent with what's on screen.
+  const visibleUsers = nonAdminUsers
+    .filter((u) => roleFilter === "all" || u.role === roleFilter)
+    .filter((u) => statusFilter === "all" || (statusFilter === "active" ? u.active : !u.active));
 
   const toggleStatus = async (user: PlatformUser) => {
     setError(null);
@@ -66,30 +94,65 @@ export default function AdminUsers() {
       <div className="mt-6 grid grid-cols-2 gap-4 sm:grid-cols-3">
         <div className="rounded-2xl border border-gray-100 bg-white p-5">
           <p className="text-sm text-gray-500">Total Users</p>
-          <p className="mt-2 text-2xl font-bold text-ink-900">{users.length}</p>
+          <p className="mt-2 text-2xl font-bold text-ink-900">{nonAdminUsers.length}</p>
         </div>
         <div className="rounded-2xl border border-gray-100 bg-white p-5">
           <p className="text-sm text-gray-500">Active</p>
           <p className="mt-2 text-2xl font-bold text-ink-900">
-            {users.filter((u) => u.active).length}
+            {nonAdminUsers.filter((u) => u.active).length}
           </p>
         </div>
         <div className="rounded-2xl border border-gray-100 bg-white p-5">
           <p className="text-sm text-gray-500">Suspended</p>
           <p className="mt-2 text-2xl font-bold text-ink-900">
-            {users.filter((u) => !u.active).length}
+            {nonAdminUsers.filter((u) => !u.active).length}
           </p>
         </div>
       </div>
 
-      <div className="mt-6 divide-y divide-gray-100 rounded-2xl border border-gray-100 bg-white">
+      <div className="mt-6 flex flex-wrap items-center gap-4">
+        <div className="flex items-center gap-1 rounded-lg border border-gray-200 bg-white p-1">
+          {roleFilterOptions.map((option) => (
+            <button
+              key={option.value}
+              onClick={() => setRoleFilter(option.value)}
+              className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
+                roleFilter === option.value
+                  ? "bg-brand-600 text-white"
+                  : "text-gray-500 hover:bg-gray-50"
+              }`}
+            >
+              {option.label}
+            </button>
+          ))}
+        </div>
+        <div className="flex items-center gap-1 rounded-lg border border-gray-200 bg-white p-1">
+          {statusFilterOptions.map((option) => (
+            <button
+              key={option.value}
+              onClick={() => setStatusFilter(option.value)}
+              className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
+                statusFilter === option.value
+                  ? "bg-brand-600 text-white"
+                  : "text-gray-500 hover:bg-gray-50"
+              }`}
+            >
+              {option.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="mt-4 divide-y divide-gray-100 rounded-2xl border border-gray-100 bg-white">
         {loading && <p className="py-10 text-center text-sm text-gray-400">Loading…</p>}
 
-        {!loading && users.length === 0 && (
-          <p className="py-10 text-center text-sm text-gray-400">No users yet.</p>
+        {!loading && visibleUsers.length === 0 && (
+          <p className="py-10 text-center text-sm text-gray-400">
+            {nonAdminUsers.length === 0 ? "No users yet." : "No users match these filters."}
+          </p>
         )}
 
-        {users.map((user) => (
+        {visibleUsers.map((user) => (
           <div key={user.id} className="flex items-center gap-3 px-5 py-4">
             <div className="min-w-0 flex-1">
               <p className="truncate text-sm font-medium text-ink-900">{user.name}</p>
@@ -115,19 +178,17 @@ export default function AdminUsers() {
             >
               {user.active ? "Active" : "Suspended"}
             </span>
-            {user.role !== "admin" && (
-              <button
-                onClick={() => toggleStatus(user)}
-                disabled={updatingId === user.id}
-                className={`shrink-0 rounded-lg border px-3 py-1.5 text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-50 ${
-                  user.active
-                    ? "border-red-200 text-red-500 hover:bg-red-50"
-                    : "border-green-200 text-green-600 hover:bg-green-50"
-                }`}
-              >
-                {updatingId === user.id ? "…" : user.active ? "Suspend" : "Reinstate"}
-              </button>
-            )}
+            <button
+              onClick={() => toggleStatus(user)}
+              disabled={updatingId === user.id}
+              className={`shrink-0 rounded-lg border px-3 py-1.5 text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-50 ${
+                user.active
+                  ? "border-red-200 text-red-500 hover:bg-red-50"
+                  : "border-green-200 text-green-600 hover:bg-green-50"
+              }`}
+            >
+              {updatingId === user.id ? "…" : user.active ? "Suspend" : "Reinstate"}
+            </button>
           </div>
         ))}
       </div>

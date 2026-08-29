@@ -40,6 +40,13 @@ export default function HelpSupport() {
   const [message, setMessage] = useState("");
   const [priority, setPriority] = useState<TicketPriority>("Medium");
   const [submitting, setSubmitting] = useState(false);
+  const [supportEmail, setSupportEmail] = useState<string | null>(null);
+
+  useEffect(() => {
+    apiRequest<{ supportEmail: string }>("/support/contact")
+      .then((response) => setSupportEmail(response.supportEmail))
+      .catch(() => {});
+  }, []);
 
   const loadTickets = () => {
     setLoading(true);
@@ -75,6 +82,15 @@ export default function HelpSupport() {
   return (
     <div className="mx-auto max-w-3xl p-8">
       <h1 className="text-xl font-bold text-ink-900">Help &amp; Support</h1>
+      {supportEmail && (
+        <p className="mt-1 text-sm text-gray-500">
+          Need something faster? Email us at{" "}
+          <a href={`mailto:${supportEmail}`} className="font-medium text-brand-600 hover:text-brand-700">
+            {supportEmail}
+          </a>
+          .
+        </p>
+      )}
 
       {error && (
         <div className="mt-4 flex items-start gap-2 rounded-xl bg-red-50 px-3 py-2.5 text-sm text-red-600">

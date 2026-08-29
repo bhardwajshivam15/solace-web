@@ -15,6 +15,8 @@ import {
   ScrollText,
   LifeBuoy,
   LogOut,
+  AlertTriangle,
+  Ticket,
 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 
@@ -29,8 +31,10 @@ const navItems = [
   { to: "/admin/leaderboard", label: "Leaderboard", icon: Trophy },
   { to: "/admin/notifications", label: "Notifications", icon: Bell },
   { to: "/admin/cms", label: "CMS", icon: FileText },
+  { to: "/admin/coupons", label: "Coupons", icon: Ticket },
   { to: "/admin/settings", label: "Settings", icon: Settings },
   { to: "/admin/audit-logs", label: "Audit Logs", icon: ScrollText },
+  { to: "/admin/error-logs", label: "Error Logs", icon: AlertTriangle },
   { to: "/admin/support-tickets", label: "Support Tickets", icon: LifeBuoy },
 ];
 

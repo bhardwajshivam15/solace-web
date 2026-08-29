@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Star, AlertCircle } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
+import { useAppData } from "../context/AppDataContext";
 import { apiRequest, resolveAssetUrl, ApiError } from "../lib/apiClient";
 
 const tabs = ["All", "Completed", "Cancelled"] as const;
@@ -33,40 +34,69 @@ function initialsAvatar(name: string): string {
 }
 
 function RatingCell({
+  sessionId,
   listenerId,
   token,
+  existingRating,
+  onRated,
 }: {
+  sessionId: string;
   listenerId: string;
   token: string | null;
+  existingRating: number | null;
+  onRated: (sessionId: string, rating: number) => void;
 }) {
+  const { updateListenerRating } = useAppData();
   const [editing, setEditing] = useState(false);
-  const [rating, setRating] = useState(0);
-  const [submitted, setSubmitted] = useState(false);
+  const [hoverRating, setHoverRating] = useState(0);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  const handleRate = (value: number) => {
-    setRating(value);
-    setEditing(false);
-    apiRequest(`/speaker/listeners/${listenerId}/rating`, {
-      method: "POST",
-      token,
-      body: { rating: value },
-    })
-      .then(() => setSubmitted(true))
-      .catch(() => {});
+  const handleRate = async (value: number) => {
+    setSubmitting(true);
+    setError(null);
+    try {
+      const stats = await apiRequest<{ average: number; count: number }>(`/speaker/sessions/${sessionId}/rating`, {
+        method: "POST",
+        token,
+        body: { rating: value },
+      });
+      onRated(sessionId, value);
+      setEditing(false);
+      // Same "reflect my own action immediately" behavior as ChatPanel's
+      // rating flow — this listener's badge updates live wherever else it's shown.
+      updateListenerRating(listenerId, stats.average, stats.count);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Could not save your rating.");
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   if (editing) {
     return (
-      <div className="flex items-center gap-0.5">
-        {[1, 2, 3, 4, 5].map((value) => (
-          <button key={value} onClick={() => handleRate(value)}>
-            <Star
-              className={`h-4 w-4 ${
-                value <= rating ? "fill-amber-400 text-amber-400" : "text-gray-300"
-              }`}
-            />
-          </button>
-        ))}
+      <div className="flex flex-col items-end gap-1">
+        <div className="flex items-center gap-0.5">
+          {[1, 2, 3, 4, 5].map((value) => (
+            <button
+              key={value}
+              onClick={() => handleRate(value)}
+              onMouseEnter={() => setHoverRating(value)}
+              onMouseLeave={() => setHoverRating(0)}
+              disabled={submitting}
+              className="disabled:cursor-not-allowed"
+            >
+              <Star
+                className={`h-4 w-4 ${
+                  value <= (hoverRating || existingRating || 0)
+                    ? "fill-amber-400 text-amber-400"
+                    : "text-gray-300"
+                }`}
+              />
+            </button>
+          ))}
+        </div>
+        {error && <p className="max-w-32 text-right text-[10px] text-red-500">{error}</p>}
       </div>
     );
   }
@@ -76,10 +106,10 @@ function RatingCell({
       onClick={() => setEditing(true)}
       className="text-xs font-medium text-brand-600 hover:text-brand-700"
     >
-      {submitted ? (
+      {existingRating != null ? (
         <span className="flex items-center gap-1 text-gray-500">
           <Star className="h-3 w-3 fill-amber-400 text-amber-400" />
-          {rating.toFixed(1)}
+          {existingRating.toFixed(1)}
         </span>
       ) : (
         "Rate"
@@ -91,16 +121,41 @@ function RatingCell({
 export default function MySessions() {
   const { token } = useAuth();
   const [sessions, setSessions] = useState<SessionHistoryEntry[]>([]);
+  const [ratingsBySession, setRatingsBySession] = useState<Record<string, number | null>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [tab, setTab] = useState<Tab>("All");
 
   useEffect(() => {
     apiRequest<{ data: SessionHistoryEntry[] }>("/speaker/sessions", { token })
-      .then((response) => setSessions(response.data))
+      .then(async (response) => {
+        setSessions(response.data);
+        // Ratings are one-per-SESSION (every completed session is
+        // independently ratable) — fetch each completed session's real
+        // rating so "Rate"/already-rated state survives reloads.
+        const completedIds = response.data.filter((s) => s.status === "COMPLETED").map((s) => s.id);
+        const entries = await Promise.all(
+          completedIds.map(async (sessionId) => {
+            try {
+              const result = await apiRequest<{ rating: number | null }>(
+                `/speaker/sessions/${sessionId}/rating`,
+                { token },
+              );
+              return [sessionId, result.rating] as const;
+            } catch {
+              return [sessionId, null] as const;
+            }
+          }),
+        );
+        setRatingsBySession(Object.fromEntries(entries));
+      })
       .catch((err) => setError(err instanceof ApiError ? err.message : "Could not load your sessions."))
       .finally(() => setLoading(false));
   }, [token]);
+
+  const handleRated = (sessionId: string, rating: number) => {
+    setRatingsBySession((prev) => ({ ...prev, [sessionId]: rating }));
+  };
 
   const filtered = sessions.filter((session) => {
     if (tab === "All") return true;
@@ -181,7 +236,13 @@ export default function MySessions() {
                   {session.speakerAmount != null ? `₹${session.speakerAmount.toFixed(2)}` : "—"}
                 </p>
                 {session.status === "COMPLETED" && (
-                  <RatingCell listenerId={session.listenerId} token={token} />
+                  <RatingCell
+                    sessionId={session.id}
+                    listenerId={session.listenerId}
+                    token={token}
+                    existingRating={ratingsBySession[session.id] ?? null}
+                    onRated={handleRated}
+                  />
                 )}
               </div>
             </div>

@@ -4,15 +4,21 @@ import { MessageCircle, AlertCircle } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import { useAppData } from "../context/AppDataContext";
 import { apiRequest, resolveAssetUrl, ApiError } from "../lib/apiClient";
+import { ensureKeysRegistered, getSharedKey, decryptText } from "../lib/e2ee";
 
-interface ConversationSummary {
+interface RawConversationSummary {
   listenerId: string;
   listenerName: string;
   listenerAvatar: string | null;
   listenerOnline: boolean;
-  lastMessage: string;
+  lastMessageCiphertext: string | null;
+  lastMessageIv: string | null;
   lastMessageSender: "speaker" | "listener" | "";
   lastMessageAt: string;
+}
+
+interface ConversationSummary extends Omit<RawConversationSummary, "lastMessageCiphertext" | "lastMessageIv"> {
+  lastMessage: string;
 }
 
 function initialsAvatar(name: string): string {
@@ -22,19 +28,53 @@ function initialsAvatar(name: string): string {
 }
 
 export default function SpeakerMessages() {
-  const { token } = useAuth();
-  const { listenerPresence } = useAppData();
+  const { user, token } = useAuth();
+  const { listenerPresence, liveThreadUpdates } = useAppData();
   const [threads, setThreads] = useState<ConversationSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    if (!user) return;
     setLoading(true);
-    apiRequest<{ data: ConversationSummary[] }>("/speaker/conversations", { token })
-      .then((response) => setThreads(response.data))
+    apiRequest<{ data: RawConversationSummary[] }>("/speaker/conversations", { token })
+      .then(async (response) => {
+        await ensureKeysRegistered(user.id, token);
+        const decorated = await Promise.all(
+          response.data.map(async (raw): Promise<ConversationSummary> => {
+            let lastMessage = "";
+            if (raw.lastMessageCiphertext && raw.lastMessageIv) {
+              const sharedKey = await getSharedKey(raw.listenerId, token);
+              lastMessage = sharedKey
+                ? await decryptText(sharedKey, raw.lastMessageCiphertext, raw.lastMessageIv)
+                : "[Encrypted message]";
+            }
+            return { ...raw, lastMessage };
+          }),
+        );
+        setThreads(decorated);
+      })
       .catch((err) => setError(err instanceof ApiError ? err.message : "Could not load your messages."))
       .finally(() => setLoading(false));
-  }, [token]);
+  }, [user, token]);
+
+  // Live WS updates (real-time only, never persisted) override the initial
+  // REST-fetched preview/timestamp and bubble the conversation to the top —
+  // same "most recently active first, bold until opened" behavior as
+  // Instagram/Messenger's DM list.
+  const enrichedThreads = threads
+    .map((thread) => {
+      const live = liveThreadUpdates[thread.listenerId];
+      if (!live) return { ...thread, unreadCount: 0 };
+      return {
+        ...thread,
+        lastMessage: live.preview,
+        lastMessageAt: live.at,
+        lastMessageSender: "listener" as const,
+        unreadCount: live.unreadCount,
+      };
+    })
+    .sort((a, b) => new Date(b.lastMessageAt).getTime() - new Date(a.lastMessageAt).getTime());
 
   return (
     <div className="mx-auto max-w-3xl p-8">
@@ -51,7 +91,7 @@ export default function SpeakerMessages() {
         {loading && <p className="py-14 text-center text-sm text-gray-400">Loading…</p>}
 
         {!loading &&
-          threads.map((thread) => (
+          enrichedThreads.map((thread) => (
             <Link
               key={thread.listenerId}
               to={`/app/find-listeners?listener=${thread.listenerId}`}
@@ -73,14 +113,21 @@ export default function SpeakerMessages() {
               <div className="min-w-0 flex-1">
                 <div className="flex items-center justify-between gap-2">
                   <p className="font-semibold text-ink-900">{thread.listenerName}</p>
-                  <p className="shrink-0 text-xs text-gray-400">
-                    {new Date(thread.lastMessageAt).toLocaleTimeString("en-IN", {
-                      hour: "2-digit",
-                      minute: "2-digit",
-                    })}
-                  </p>
+                  <span className="flex shrink-0 items-center gap-1.5">
+                    {thread.unreadCount > 0 && (
+                      <span className="flex h-4 min-w-[16px] items-center justify-center rounded-full bg-brand-600 px-1 text-[10px] font-semibold text-white">
+                        {thread.unreadCount > 3 ? "3+" : thread.unreadCount}
+                      </span>
+                    )}
+                    <p className="text-xs text-gray-400">
+                      {new Date(thread.lastMessageAt).toLocaleTimeString("en-IN", {
+                        hour: "2-digit",
+                        minute: "2-digit",
+                      })}
+                    </p>
+                  </span>
                 </div>
-                <p className="truncate text-sm text-gray-500">
+                <p className={`truncate text-sm ${thread.unreadCount > 0 ? "font-semibold text-ink-900" : "text-gray-500"}`}>
                   {thread.lastMessageSender === "speaker" ? "You: " : ""}
                   {thread.lastMessage}
                 </p>

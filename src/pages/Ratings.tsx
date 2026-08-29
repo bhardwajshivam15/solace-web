@@ -23,6 +23,29 @@ interface RatingSummary {
   reviews: Review[];
 }
 
+// A single review's rating is always a whole number (1-5), but the
+// aggregate average is fractional (e.g. 3.5) — rounding it to the nearest
+// whole star for display would show a full 4th star instead of a half one.
+function starFill(value: number, starIndex: number): "full" | "half" | "empty" {
+  const diff = value - starIndex;
+  if (diff >= 0.75) return "full";
+  if (diff >= 0.25) return "half";
+  return "empty";
+}
+
+function RatingStar({ fill, sizeClassName }: { fill: "full" | "half" | "empty"; sizeClassName: string }) {
+  if (fill === "empty") return <Star className={`${sizeClassName} text-gray-200`} />;
+  if (fill === "full") return <Star className={`${sizeClassName} fill-amber-400 text-amber-400`} />;
+  return (
+    <span className={`relative inline-block ${sizeClassName}`}>
+      <Star className={`${sizeClassName} text-gray-200`} />
+      <span className="absolute inset-0 w-1/2 overflow-hidden">
+        <Star className={`${sizeClassName} fill-amber-400 text-amber-400`} />
+      </span>
+    </span>
+  );
+}
+
 export default function Ratings() {
   const { token } = useAuth();
   const [summary, setSummary] = useState<RatingSummary | null>(null);
@@ -64,14 +87,7 @@ export default function Ratings() {
         </p>
         <div className="mt-2 flex items-center justify-center gap-1">
           {Array.from({ length: 5 }).map((_, index) => (
-            <Star
-              key={index}
-              className={`h-4 w-4 ${
-                index < Math.round(summary.averageRating)
-                  ? "fill-amber-400 text-amber-400"
-                  : "text-gray-200"
-              }`}
-            />
+            <RatingStar key={index} fill={starFill(summary.averageRating, index)} sizeClassName="h-4 w-4" />
           ))}
         </div>
         <p className="mt-1 text-xs text-gray-400">

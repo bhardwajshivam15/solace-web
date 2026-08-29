@@ -39,6 +39,8 @@ import ListenerSupport from "./pages/ListenerSupport";
 
 // Admin
 import AdminDashboard from "./pages/AdminDashboard";
+import AdminListenerApplicationDetail from "./pages/AdminListenerApplicationDetail";
+import AdminCoupons from "./pages/AdminCoupons";
 import AdminUsers from "./pages/AdminUsers";
 import AdminListeners from "./pages/AdminListeners";
 import AdminSessions from "./pages/AdminSessions";
@@ -50,6 +52,7 @@ import AdminNotifications from "./pages/AdminNotifications";
 import AdminCms from "./pages/AdminCms";
 import AdminSettings from "./pages/AdminSettings";
 import AdminAuditLogs from "./pages/AdminAuditLogs";
+import AdminErrorLogs from "./pages/AdminErrorLogs";
 import AdminSupportTickets from "./pages/AdminSupportTickets";
 
 export default function App() {
@@ -94,6 +97,8 @@ export default function App() {
 
           <Route path="/admin" element={<RequireRole role="admin"><AdminLayout /></RequireRole>}>
             <Route index element={<AdminDashboard />} />
+            <Route path="listener-applications/:id" element={<AdminListenerApplicationDetail />} />
+            <Route path="coupons" element={<AdminCoupons />} />
             <Route path="users" element={<AdminUsers />} />
             <Route path="listeners" element={<AdminListeners />} />
             <Route path="sessions" element={<AdminSessions />} />
@@ -105,6 +110,7 @@ export default function App() {
             <Route path="cms" element={<AdminCms />} />
             <Route path="settings" element={<AdminSettings />} />
             <Route path="audit-logs" element={<AdminAuditLogs />} />
+            <Route path="error-logs" element={<AdminErrorLogs />} />
             <Route path="support-tickets" element={<AdminSupportTickets />} />
           </Route>
 

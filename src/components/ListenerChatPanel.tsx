@@ -1,18 +1,40 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
-import { ChevronLeft, Lock, Send, Smile, UserRound, AlertTriangle, Loader2, Check, X } from "lucide-react";
+import { ChevronLeft, Lock, Send, Smile, UserRound, AlertTriangle, Loader2, Check, X, Flag } from "lucide-react";
 import type { LiveSession } from "../types";
 import { useAppData } from "../context/AppDataContext";
-import { ApiError } from "../lib/apiClient";
+import { useAuth } from "../context/AuthContext";
+import { apiRequest, ApiError } from "../lib/apiClient";
 import MessageStatusTicks from "./MessageStatusTicks";
 import LiveSessionTimer from "./LiveSessionTimer";
+import ReportConversationModal from "./ReportConversationModal";
 
 const QUICK_EMOJIS = ["😊", "🙂", "❤️", "👍", "😢", "🙏"];
+
+function isSameDay(a: string, b: string): boolean {
+  const dateA = new Date(a);
+  const dateB = new Date(b);
+  return (
+    dateA.getFullYear() === dateB.getFullYear() &&
+    dateA.getMonth() === dateB.getMonth() &&
+    dateA.getDate() === dateB.getDate()
+  );
+}
+
+function formatDateSeparator(iso: string): string {
+  const now = new Date();
+  const yesterday = new Date();
+  yesterday.setDate(now.getDate() - 1);
+  if (isSameDay(iso, now.toISOString())) return "Today";
+  if (isSameDay(iso, yesterday.toISOString())) return "Yesterday";
+  return new Date(iso).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" });
+}
 
 function ListenerSessionControlBar({
   speakerLabel,
   session,
   busy,
   error,
+  justCompleted,
   onAccept,
   onDecline,
   onEnd,
@@ -21,11 +43,14 @@ function ListenerSessionControlBar({
   session: LiveSession | undefined;
   busy: boolean;
   error: string | null;
+  justCompleted: boolean;
   onAccept: () => void;
   onDecline: () => void;
   onEnd: () => void;
 }) {
-  if (!session) return null;
+  // A COMPLETED session that wasn't just completed in this visit renders as
+  // if there were no session at all, same as ChatPanel's speaker side.
+  if (!session || (session.status === "COMPLETED" && !justCompleted)) return null;
 
   if (session.status === "REQUESTED") {
     return (
@@ -148,14 +173,38 @@ export default function ListenerChatPanel({
     endLiveSession,
     loadCurrentSession,
   } = useAppData();
+  const { token } = useAuth();
   const [draft, setDraft] = useState("");
   const [showEmojis, setShowEmojis] = useState(false);
   const [sessionBusy, setSessionBusy] = useState(false);
   const [sessionError, setSessionError] = useState<string | null>(null);
+  const [showReportModal, setShowReportModal] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
 
   const messages = conversations[speakerId] ?? [];
   const liveSession = liveSessions[speakerId];
+
+  // Same reasoning as ChatPanel's speaker side: loadCurrentSession fetches
+  // the most recent session regardless of age, so without this a reopened
+  // chat would show a stale "Session completed" summary forever. Only a
+  // real, observed transition into COMPLETED during this visit counts.
+  const [justCompleted, setJustCompleted] = useState(false);
+  const prevSessionRef = useRef<{ id?: string; status?: string }>({});
+
+  useEffect(() => {
+    const prev = prevSessionRef.current;
+    const currentStatus = liveSession?.status;
+
+    if (prev.id !== speakerId) {
+      setJustCompleted(false);
+    } else if (currentStatus === "COMPLETED" && prev.status && prev.status !== "COMPLETED") {
+      setJustCompleted(true);
+    } else if (currentStatus !== "COMPLETED") {
+      setJustCompleted(false);
+    }
+
+    prevSessionRef.current = { id: speakerId, status: currentStatus };
+  }, [speakerId, liveSession?.status]);
 
   useEffect(() => {
     loadConversation(speakerId);
@@ -214,6 +263,16 @@ export default function ListenerChatPanel({
     }
   };
 
+  // Left to throw on failure so ReportConversationModal can show a real
+  // error (e.g. no conversation exists yet) instead of falsely reporting success.
+  const handleReport = async (reason: string, priority: "LOW" | "MEDIUM" | "HIGH") => {
+    await apiRequest(`/listener/conversations/${speakerId}/report`, {
+      method: "POST",
+      token,
+      body: { reason, priority },
+    });
+  };
+
   return (
     <div className="flex h-full flex-col">
       <div className="flex items-center justify-between border-b border-gray-100 px-6 py-4">
@@ -224,6 +283,12 @@ export default function ListenerChatPanel({
           <ChevronLeft className="h-4 w-4" />
           Back to Messages
         </button>
+      </div>
+
+      <div className="flex items-center gap-2 bg-blue-50 px-6 py-1.5 text-xs text-blue-700">
+        <Lock className="h-3.5 w-3.5 shrink-0" />
+        Keep your conversation on Solace. Never exchange phone numbers, emails, social media/WhatsApp
+        handles, or payment details.
       </div>
 
       <div className="flex items-start justify-between gap-3 border-b border-gray-100 px-6 py-4">
@@ -237,12 +302,21 @@ export default function ListenerChatPanel({
           </div>
         </div>
 
-        <div className="shrink-0">
+        <div className="flex shrink-0 items-center gap-2">
+          <button
+            onClick={() => setShowReportModal(true)}
+            title="Report this conversation"
+            className="flex items-center gap-1 rounded-lg px-2 py-1.5 text-xs font-medium text-gray-400 hover:bg-red-50 hover:text-red-500"
+          >
+            <Flag className="h-3.5 w-3.5" />
+            Report
+          </button>
           <ListenerSessionControlBar
             speakerLabel={speakerLabel}
             session={liveSession}
             busy={sessionBusy}
             error={sessionError}
+            justCompleted={justCompleted}
             onAccept={handleAccept}
             onDecline={handleDecline}
             onEnd={handleEnd}
@@ -251,40 +325,42 @@ export default function ListenerChatPanel({
       </div>
 
       <div className="flex-1 space-y-5 overflow-y-auto px-6 py-6">
-        <div className="flex justify-center">
-          <span className="rounded-full bg-gray-100 px-3 py-1 text-[11px] text-gray-400">
-            Today
-          </span>
-        </div>
-
-        {messages.map((message) => (
-          <div
-            key={message.id}
-            className={`flex ${message.sender === "listener" ? "justify-end" : "justify-start"}`}
-          >
+        {messages.map((message, index) => (
+          <div key={message.id}>
+            {(index === 0 || !isSameDay(message.createdAt, messages[index - 1].createdAt)) && (
+              <div className="mb-5 flex justify-center">
+                <span className="rounded-full bg-gray-100 px-3 py-1 text-[11px] text-gray-400">
+                  {formatDateSeparator(message.createdAt)}
+                </span>
+              </div>
+            )}
             <div
-              className={`flex items-end gap-2 ${message.sender === "listener" ? "flex-row-reverse" : ""}`}
+              className={`flex ${message.sender === "listener" ? "justify-end" : "justify-start"}`}
             >
-              {message.sender === "speaker" && (
-                <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-brand-100 text-brand-700">
-                  <UserRound className="h-3.5 w-3.5" />
-                </div>
-              )}
               <div
-                className={`max-w-sm rounded-2xl px-4 py-3 text-sm ${
-                  message.sender === "listener"
-                    ? "rounded-br-sm bg-brand-600 text-white"
-                    : "rounded-bl-sm bg-gray-100 text-ink-900"
-                }`}
+                className={`flex items-end gap-2 ${message.sender === "listener" ? "flex-row-reverse" : ""}`}
               >
-                <p>{message.text}</p>
+                {message.sender === "speaker" && (
+                  <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-brand-100 text-brand-700">
+                    <UserRound className="h-3.5 w-3.5" />
+                  </div>
+                )}
                 <div
-                  className={`mt-1 flex items-center gap-1 text-[10px] ${
-                    message.sender === "listener" ? "justify-end text-brand-100" : "text-gray-400"
+                  className={`max-w-sm rounded-2xl px-4 py-3 text-sm ${
+                    message.sender === "listener"
+                      ? "rounded-br-sm bg-brand-600 text-white"
+                      : "rounded-bl-sm bg-gray-100 text-ink-900"
                   }`}
                 >
-                  {message.time}
-                  {message.sender === "listener" && <MessageStatusTicks status={message.status} />}
+                  <p>{message.text}</p>
+                  <div
+                    className={`mt-1 flex items-center gap-1 text-[10px] ${
+                      message.sender === "listener" ? "justify-end text-brand-100" : "text-gray-400"
+                    }`}
+                  >
+                    {message.time}
+                    {message.sender === "listener" && <MessageStatusTicks status={message.status} />}
+                  </div>
                 </div>
               </div>
             </div>
@@ -346,6 +422,14 @@ export default function ListenerChatPanel({
               : "Accept a session request to send messages."}
           </div>
         </div>
+      )}
+
+      {showReportModal && (
+        <ReportConversationModal
+          otherPartyName={speakerLabel}
+          onSubmit={handleReport}
+          onClose={() => setShowReportModal(false)}
+        />
       )}
     </div>
   );

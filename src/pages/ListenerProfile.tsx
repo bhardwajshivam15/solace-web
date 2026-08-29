@@ -14,7 +14,7 @@ import {
   Check,
   IndianRupee,
 } from "lucide-react";
-import { categories } from "../data/mockData";
+import { categories, languageOptions as LANGUAGE_OPTIONS } from "../data/mockData";
 import { useAuth } from "../context/AuthContext";
 import { apiRequest, resolveAssetUrl, ApiError } from "../lib/apiClient";
 
@@ -24,37 +24,20 @@ interface ListenerProfileData {
   bio: string;
   topics: string[];
   languages: string[];
-  experienceYears: number | null;
+  experienceYears: number;
   pricePerMinute: number;
+  minPricePerMinute: number;
+  maxPricePerMinute: number;
+  pricingStatus: "OK" | "PRICE_ADJUSTMENT_REQUIRED";
   verified: boolean;
   joinedDate: string;
 }
-
-const LANGUAGE_OPTIONS = [
-  "English",
-  "Hindi",
-  "Bengali",
-  "Tamil",
-  "Telugu",
-  "Marathi",
-  "Gujarati",
-  "Kannada",
-  "Malayalam",
-  "Punjabi",
-  "Urdu",
-  "Odia",
-  "Spanish",
-  "French",
-  "German",
-  "Mandarin",
-  "Arabic",
-  "Portuguese",
-];
 
 export default function ListenerProfile() {
   const { token } = useAuth();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const languageMenuRef = useRef<HTMLDivElement>(null);
+  const errorRef = useRef<HTMLDivElement>(null);
 
   const [profile, setProfile] = useState<ListenerProfileData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -67,7 +50,6 @@ export default function ListenerProfile() {
   const [topics, setTopics] = useState<string[]>([]);
   const [languages, setLanguages] = useState<string[]>([]);
   const [languageMenuOpen, setLanguageMenuOpen] = useState(false);
-  const [experienceYears, setExperienceYears] = useState("");
   const [pricePerMinute, setPricePerMinute] = useState("10");
 
   useEffect(() => {
@@ -88,12 +70,19 @@ export default function ListenerProfile() {
         setBio(p.bio ?? "");
         setTopics(p.topics ?? []);
         setLanguages(p.languages ?? []);
-        setExperienceYears(p.experienceYears != null ? String(p.experienceYears) : "");
         setPricePerMinute(String(p.pricePerMinute));
       })
       .catch((err) => setError(err instanceof ApiError ? err.message : "Could not load your profile."))
       .finally(() => setLoading(false));
   }, [token]);
+
+  // The error/success banner renders at the TOP of this page while Save
+  // sits at the bottom of a long form — without this, feedback after
+  // scrolling down to click Save is technically on-screen in the DOM but
+  // invisible, since the scrollable content area doesn't move on its own.
+  useEffect(() => {
+    if (error || saved) errorRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, [error, saved]);
 
   const toggleTopic = (label: string) => {
     setTopics((prev) => (prev.includes(label) ? prev.filter((t) => t !== label) : [...prev, label]));
@@ -106,6 +95,16 @@ export default function ListenerProfile() {
   };
 
   const handleSave = async () => {
+    if (!profile) return;
+    if (topics.length === 0) {
+      setError("Please select at least one category.");
+      return;
+    }
+    const priceValue = pricePerMinute === "" ? null : Number(pricePerMinute);
+    if (priceValue != null && (priceValue < profile.minPricePerMinute || priceValue > profile.maxPricePerMinute)) {
+      setError(`Price must be between ₹${profile.minPricePerMinute} and ₹${profile.maxPricePerMinute} per minute.`);
+      return;
+    }
     setSaving(true);
     setError(null);
     try {
@@ -116,7 +115,6 @@ export default function ListenerProfile() {
           bio,
           topics,
           languages,
-          experienceYears: experienceYears === "" ? null : Number(experienceYears),
           pricePerMinute: pricePerMinute === "" ? null : Number(pricePerMinute),
         },
       });
@@ -172,15 +170,22 @@ export default function ListenerProfile() {
       </div>
 
       {error && (
-        <div className="mt-4 flex items-start gap-2 rounded-xl bg-red-50 px-3 py-2.5 text-sm text-red-600">
+        <div ref={errorRef} className="mt-4 flex items-start gap-2 rounded-xl bg-red-50 px-3 py-2.5 text-sm text-red-600">
           <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
           {error}
         </div>
       )}
       {saved && (
-        <div className="mt-4 flex items-center gap-2 rounded-xl bg-green-50 px-3 py-2.5 text-sm text-green-700">
+        <div ref={errorRef} className="mt-4 flex items-center gap-2 rounded-xl bg-green-50 px-3 py-2.5 text-sm text-green-700">
           <CheckCircle2 className="h-4 w-4" />
           Profile updated.
+        </div>
+      )}
+      {profile.pricingStatus === "PRICE_ADJUSTMENT_REQUIRED" && (
+        <div className="mt-4 flex items-start gap-2 rounded-xl bg-amber-50 px-3 py-2.5 text-sm text-amber-700">
+          <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+          Your price is outside the currently allowed range (₹{profile.minPricePerMinute}–₹{profile.maxPricePerMinute}/min
+          for your rating). Adjust it below — speakers can't start new sessions with you until you do.
         </div>
       )}
 
@@ -251,15 +256,14 @@ export default function ListenerProfile() {
             <div>
               <label className="flex items-center gap-1.5 text-xs font-medium text-gray-500">
                 <Briefcase className="h-3.5 w-3.5" />
-                Experience (years)
+                Experience
               </label>
-              <input
-                type="number"
-                min={0}
-                value={experienceYears}
-                onChange={(event) => setExperienceYears(event.target.value)}
-                className="mt-1.5 w-full rounded-xl border border-gray-200 px-3.5 py-2.5 text-sm text-ink-900 outline-none transition-colors focus:border-brand-400 focus:ring-2 focus:ring-brand-100"
-              />
+              <p className="mt-1.5 w-full rounded-xl border border-gray-100 bg-gray-50 px-3.5 py-2.5 text-sm font-medium text-ink-900">
+                {profile.experienceYears > 0
+                  ? `${profile.experienceYears} year${profile.experienceYears === 1 ? "" : "s"} on Solace`
+                  : "Less than a year on Solace"}
+              </p>
+              <p className="mt-1 text-[11px] text-gray-400">Based on how long you've been a listener here.</p>
             </div>
             <div>
               <label className="flex items-center gap-1.5 text-xs font-medium text-gray-500">
@@ -268,12 +272,20 @@ export default function ListenerProfile() {
               </label>
               <input
                 type="number"
-                min={1}
+                min={profile.minPricePerMinute}
+                max={profile.maxPricePerMinute}
                 value={pricePerMinute}
                 onChange={(event) => setPricePerMinute(event.target.value)}
-                className="mt-1.5 w-full rounded-xl border border-gray-200 px-3.5 py-2.5 text-sm text-ink-900 outline-none transition-colors focus:border-brand-400 focus:ring-2 focus:ring-brand-100"
+                className={`mt-1.5 w-full rounded-xl border px-3.5 py-2.5 text-sm text-ink-900 outline-none transition-colors focus:ring-2 ${
+                  profile.pricingStatus === "PRICE_ADJUSTMENT_REQUIRED"
+                    ? "border-amber-300 focus:border-amber-400 focus:ring-amber-100"
+                    : "border-gray-200 focus:border-brand-400 focus:ring-brand-100"
+                }`}
               />
-              <p className="mt-1 text-[11px] text-gray-400">What speakers pay to talk to you.</p>
+              <p className="mt-1 text-[11px] text-gray-400">
+                What speakers pay to talk to you. Allowed range for your current rating: ₹{profile.minPricePerMinute}–₹
+                {profile.maxPricePerMinute}/min.
+              </p>
             </div>
             <div>
               <label className="flex items-center gap-1.5 text-xs font-medium text-gray-500">

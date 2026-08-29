@@ -2,19 +2,27 @@ import { useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { AlertCircle, MessageCircle, UserRound } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
+import { useAppData } from "../context/AppDataContext";
 import { apiRequest, ApiError } from "../lib/apiClient";
+import { ensureKeysRegistered, getSharedKey, decryptText } from "../lib/e2ee";
 import ListenerChatPanel from "../components/ListenerChatPanel";
 
-interface ConversationSummary {
+interface RawConversationSummary {
   speakerId: string;
   speakerLabel: string;
-  lastMessage: string;
+  lastMessageCiphertext: string | null;
+  lastMessageIv: string | null;
   lastMessageSender: "speaker" | "listener" | "";
   lastMessageAt: string;
 }
 
+interface ConversationSummary extends Omit<RawConversationSummary, "lastMessageCiphertext" | "lastMessageIv"> {
+  lastMessage: string;
+}
+
 export default function ListenerMessages() {
-  const { token } = useAuth();
+  const { user, token } = useAuth();
+  const { liveThreadUpdates } = useAppData();
   const [searchParams] = useSearchParams();
 
   const [threads, setThreads] = useState<ConversationSummary[]>([]);
@@ -22,15 +30,57 @@ export default function ListenerMessages() {
   const [error, setError] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(searchParams.get("speaker"));
 
+  // useState's initial value only runs once — without this, clicking a
+  // "new message" toast while already on this page (for a different or no
+  // thread) wouldn't actually switch the open conversation.
   useEffect(() => {
+    const speakerParam = searchParams.get("speaker");
+    if (speakerParam) setSelectedId(speakerParam);
+  }, [searchParams]);
+
+  useEffect(() => {
+    if (!user) return;
     setLoading(true);
-    apiRequest<{ data: ConversationSummary[] }>("/listener/conversations", { token })
-      .then((response) => setThreads(response.data))
+    apiRequest<{ data: RawConversationSummary[] }>("/listener/conversations", { token })
+      .then(async (response) => {
+        await ensureKeysRegistered(user.id, token);
+        const decorated = await Promise.all(
+          response.data.map(async (raw): Promise<ConversationSummary> => {
+            let lastMessage = "";
+            if (raw.lastMessageCiphertext && raw.lastMessageIv) {
+              const sharedKey = await getSharedKey(raw.speakerId, token);
+              lastMessage = sharedKey
+                ? await decryptText(sharedKey, raw.lastMessageCiphertext, raw.lastMessageIv)
+                : "[Encrypted message]";
+            }
+            return { ...raw, lastMessage };
+          }),
+        );
+        setThreads(decorated);
+      })
       .catch((err) => setError(err instanceof ApiError ? err.message : "Could not load your messages."))
       .finally(() => setLoading(false));
-  }, [token]);
+  }, [user, token]);
 
   const selectedThread = threads.find((t) => t.speakerId === selectedId) ?? null;
+
+  // Live WS updates (real-time only, never persisted) override the initial
+  // REST-fetched preview/timestamp and bubble the conversation to the top —
+  // same "most recently active first, bold until opened" behavior as
+  // Instagram/Messenger's DM list.
+  const enrichedThreads = threads
+    .map((thread) => {
+      const live = liveThreadUpdates[thread.speakerId];
+      if (!live) return { ...thread, unreadCount: 0 };
+      return {
+        ...thread,
+        lastMessage: live.preview,
+        lastMessageAt: live.at,
+        lastMessageSender: "speaker" as const,
+        unreadCount: live.unreadCount,
+      };
+    })
+    .sort((a, b) => new Date(b.lastMessageAt).getTime() - new Date(a.lastMessageAt).getTime());
 
   return (
     <div className="flex h-full">
@@ -50,7 +100,7 @@ export default function ListenerMessages() {
           {loading && <p className="py-14 text-center text-sm text-gray-400">Loading…</p>}
 
           {!loading &&
-            threads.map((thread) => (
+            enrichedThreads.map((thread) => (
               <button
                 key={thread.speakerId}
                 onClick={() => setSelectedId(thread.speakerId)}
@@ -64,14 +114,21 @@ export default function ListenerMessages() {
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center justify-between gap-2">
                     <p className="truncate font-semibold text-ink-900">{thread.speakerLabel}</p>
-                    <p className="shrink-0 text-xs text-gray-400">
-                      {new Date(thread.lastMessageAt).toLocaleTimeString("en-IN", {
-                        hour: "2-digit",
-                        minute: "2-digit",
-                      })}
-                    </p>
+                    <span className="flex shrink-0 items-center gap-1.5">
+                      {thread.unreadCount > 0 && (
+                        <span className="flex h-4 min-w-[16px] items-center justify-center rounded-full bg-brand-600 px-1 text-[10px] font-semibold text-white">
+                          {thread.unreadCount > 3 ? "3+" : thread.unreadCount}
+                        </span>
+                      )}
+                      <p className="text-xs text-gray-400">
+                        {new Date(thread.lastMessageAt).toLocaleTimeString("en-IN", {
+                          hour: "2-digit",
+                          minute: "2-digit",
+                        })}
+                      </p>
+                    </span>
                   </div>
-                  <p className="truncate text-sm text-gray-500">
+                  <p className={`truncate text-sm ${thread.unreadCount > 0 ? "font-semibold text-ink-900" : "text-gray-500"}`}>
                     {thread.lastMessageSender === "listener" ? "You: " : ""}
                     {thread.lastMessage}
                   </p>
@@ -93,7 +150,7 @@ export default function ListenerMessages() {
         </div>
       </div>
 
-      <div className="flex-1">
+      <div className="min-w-0 flex-1">
         {selectedThread ? (
           <ListenerChatPanel
             speakerId={selectedThread.speakerId}
