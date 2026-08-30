@@ -1,7 +1,6 @@
 import type {
   AdminAnnouncement,
   AppNotification,
-  AvailabilitySlot,
   Category,
   CmsPage,
   Listener,
@@ -17,7 +16,6 @@ import type {
   RatingDistributionEntry,
   ReportedConversation,
   Review,
-  ScheduleItem,
   SpeakerProfile,
   SupportTicket,
   Transaction,
@@ -228,31 +226,11 @@ export const dailyQuotes = [
 // Listener dashboard
 // ---------------------------------------------------------------------------
 
-export const listenerProfile = {
-  name: "Aarohi",
-  avatar: avatar("47"),
-  rank: 12,
-};
-
 export const listenerReviews: Review[] = [
   { id: "rv1", name: "Anonymous", rating: 5, text: "Very patient and kind. Really helped me feel heard.", date: "12 May, 2024" },
   { id: "rv2", name: "Anonymous", rating: 5, text: "Great listener, gave me space to talk without judgement.", date: "11 May, 2024" },
   { id: "rv3", name: "Anonymous", rating: 4, text: "Helpful conversation, felt a lot better after.", date: "10 May, 2024" },
 ];
-
-export const todaysSchedule: ScheduleItem[] = [
-  { id: "sc1", time: "09:00 AM", title: "Available for chat requests" },
-  { id: "sc2", time: "01:00 PM", title: "Lunch break" },
-  { id: "sc3", time: "06:00 PM", title: "Evening availability window" },
-];
-
-export const listenerPerformance = {
-  averageRating: 4.9,
-  acceptanceRate: 92,
-  responseTime: "18s",
-  completedSessions: 342,
-  repeatUsers: 87,
-};
 
 // ---------------------------------------------------------------------------
 // Admin dashboard
@@ -354,16 +332,6 @@ export const listenerSessionHistory: ListenerSessionRecord[] = [
   { id: "ls2", speakerLabel: "Anonymous User #3390", date: "11 May, 2024", time: "08:20 PM", duration: "15m 30s", earning: 105, rating: 5, status: "completed" },
   { id: "ls3", speakerLabel: "Anonymous User #1027", date: "10 May, 2024", time: "07:15 PM", duration: "16m 05s", earning: 112, rating: 4, status: "completed" },
   { id: "ls4", speakerLabel: "Anonymous User #2214", date: "09 May, 2024", time: "06:00 PM", duration: "3m 10s", earning: 0, rating: 0, status: "cancelled" },
-];
-
-export const weeklyAvailability: AvailabilitySlot[] = [
-  { day: "Monday", enabled: true, from: "09:00 AM", to: "06:00 PM" },
-  { day: "Tuesday", enabled: true, from: "09:00 AM", to: "06:00 PM" },
-  { day: "Wednesday", enabled: true, from: "09:00 AM", to: "06:00 PM" },
-  { day: "Thursday", enabled: true, from: "09:00 AM", to: "06:00 PM" },
-  { day: "Friday", enabled: true, from: "09:00 AM", to: "09:00 PM" },
-  { day: "Saturday", enabled: false, from: "10:00 AM", to: "02:00 PM" },
-  { day: "Sunday", enabled: false, from: "10:00 AM", to: "02:00 PM" },
 ];
 
 export const listenerWithdrawalHistory: ListenerWithdrawalRecord[] = [

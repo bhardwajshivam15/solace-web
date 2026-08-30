@@ -50,6 +50,7 @@ interface AuthContextValue {
   token: string | null;
   isAuthenticated: boolean;
   login: (email: string, password: string) => Promise<AuthUser>;
+  loginWithGoogle: (idToken: string) => Promise<AuthUser>;
   register: (payload: RegisterPayload) => Promise<AuthResponse>;
   logout: () => void;
   forgotPassword: (email: string) => Promise<string>;
@@ -84,6 +85,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const response = await apiRequest<AuthResponse>("/auth/login", {
       method: "POST",
       body: { email, password },
+    });
+    persist(response.user, response.token!);
+    return response.user;
+  };
+
+  // Logs into an existing account only — matched server-side by verified
+  // Google email (see AuthService.loginWithGoogle). Never creates a user.
+  const loginWithGoogle = async (idToken: string) => {
+    const response = await apiRequest<AuthResponse>("/auth/google", {
+      method: "POST",
+      body: { idToken },
     });
     persist(response.user, response.token!);
     return response.user;
@@ -130,6 +142,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       token,
       isAuthenticated: !!token,
       login,
+      loginWithGoogle,
       register,
       logout,
       forgotPassword,

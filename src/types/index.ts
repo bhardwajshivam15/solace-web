@@ -116,12 +116,6 @@ export interface Review {
   date: string;
 }
 
-export interface ScheduleItem {
-  id: string;
-  time: string;
-  title: string;
-}
-
 export interface ReportedConversation {
   id: string;
   user: string;
@@ -204,13 +198,6 @@ export interface ListenerSessionRecord {
   earning: number;
   rating: number;
   status: "completed" | "cancelled";
-}
-
-export interface AvailabilitySlot {
-  day: string;
-  enabled: boolean;
-  from: string;
-  to: string;
 }
 
 export interface ListenerWithdrawalRecord {

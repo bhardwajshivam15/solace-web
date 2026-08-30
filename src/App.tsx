@@ -29,7 +29,6 @@ import ListenerDashboard from "./pages/ListenerDashboard";
 import ListenerMessages from "./pages/ListenerMessages";
 import ListenerSessions from "./pages/ListenerSessions";
 import ListenerNotifications from "./pages/ListenerNotifications";
-import Availability from "./pages/Availability";
 import Earnings from "./pages/Earnings";
 import Withdrawals from "./pages/Withdrawals";
 import Ratings from "./pages/Ratings";
@@ -86,7 +85,6 @@ export default function App() {
             <Route path="messages" element={<ListenerMessages />} />
             <Route path="sessions" element={<ListenerSessions />} />
             <Route path="notifications" element={<ListenerNotifications />} />
-            <Route path="availability" element={<Availability />} />
             <Route path="earnings" element={<Earnings />} />
             <Route path="withdrawals" element={<Withdrawals />} />
             <Route path="ratings" element={<Ratings />} />

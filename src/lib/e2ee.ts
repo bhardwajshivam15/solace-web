@@ -22,8 +22,6 @@ const ECDH_PARAMS = { name: "ECDH", namedCurve: "P-256" };
 
 let cachedKeyPair: CryptoKeyPair | null = null;
 let keysReadyForUserId: string | null = null;
-const publicKeyCache = new Map<string, CryptoKey>();
-const sharedKeyCache = new Map<string, CryptoKey>();
 
 function toBase64(buffer: ArrayBuffer): string {
   let binary = "";
@@ -99,16 +97,19 @@ export async function ensureKeysRegistered(userId: string, token: string | null)
   }
 }
 
+// Deliberately not cached (was, until a real bug: caching the other party's
+// public key for the tab's whole lifetime meant a stale key never got
+// re-fetched if they ever re-registered a new one — e.g. cleared storage or
+// logged in from a different device/origin — silently breaking decryption
+// for everyone still holding the old cached key. Only called once per
+// thread-load/send (see AppDataContext), not per message, so re-fetching
+// fresh every time is cheap and guarantees correctness over a
+// micro-optimization that isn't safe to make.
 async function getOtherPartyPublicKey(otherUserId: string, token: string | null): Promise<CryptoKey | null> {
-  const cached = publicKeyCache.get(otherUserId);
-  if (cached) return cached;
-
   try {
     const response = await apiRequest<{ publicKey: string }>(`/users/${otherUserId}/public-key`, { token });
     const jwk = JSON.parse(response.publicKey) as JsonWebKey;
-    const key = await crypto.subtle.importKey("jwk", jwk, ECDH_PARAMS, true, []);
-    publicKeyCache.set(otherUserId, key);
-    return key;
+    return await crypto.subtle.importKey("jwk", jwk, ECDH_PARAMS, true, []);
   } catch {
     // The other party hasn't logged in since encrypted messaging shipped, or
     // has no key registered yet — nothing to derive a shared secret from.
@@ -120,21 +121,16 @@ async function getOtherPartyPublicKey(otherUserId: string, token: string | null)
 export async function getSharedKey(otherUserId: string, token: string | null): Promise<CryptoKey | null> {
   if (!cachedKeyPair) return null;
 
-  const cached = sharedKeyCache.get(otherUserId);
-  if (cached) return cached;
-
   const theirPublicKey = await getOtherPartyPublicKey(otherUserId, token);
   if (!theirPublicKey) return null;
 
-  const sharedKey = await crypto.subtle.deriveKey(
+  return crypto.subtle.deriveKey(
     { name: "ECDH", public: theirPublicKey },
     cachedKeyPair.privateKey,
     { name: "AES-GCM", length: 256 },
     false,
     ["encrypt", "decrypt"],
   );
-  sharedKeyCache.set(otherUserId, sharedKey);
-  return sharedKey;
 }
 
 export async function encryptText(sharedKey: CryptoKey, plaintext: string): Promise<{ ciphertext: string; iv: string }> {
@@ -162,6 +158,4 @@ export function clearKeys(): void {
   cachedKeyPair = null;
   keysReadyForUserId = null;
   inFlightRegistration = null;
-  publicKeyCache.clear();
-  sharedKeyCache.clear();
 }

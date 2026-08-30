@@ -1,16 +1,78 @@
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { Heart, Lock, Mail, AlertCircle } from "lucide-react";
 import { useAuth, ROLE_HOME_PATH } from "../context/AuthContext";
 import { ApiError } from "../lib/apiClient";
 
+const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID as string | undefined;
+
+declare global {
+  interface Window {
+    google?: {
+      accounts: {
+        id: {
+          initialize: (config: { client_id: string; callback: (response: { credential: string }) => void }) => void;
+          prompt: () => void;
+        };
+      };
+    };
+  }
+}
+
 export default function Login() {
   const navigate = useNavigate();
-  const { login } = useAuth();
+  const { login, loginWithGoogle } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [googleReady, setGoogleReady] = useState(false);
+
+  // Loaded once, only on this page — no reason to pull Google's script in
+  // anywhere else. Silently stays unready if no client id is configured
+  // (e.g. local dev without one set up yet), same "blank-config-safe"
+  // convention as everywhere else this session — the button then just
+  // falls back to its old placeholder message instead of erroring.
+  useEffect(() => {
+    if (!GOOGLE_CLIENT_ID) return;
+    const script = document.createElement("script");
+    script.src = "https://accounts.google.com/gsi/client";
+    script.async = true;
+    script.defer = true;
+    script.onload = () => {
+      window.google?.accounts.id.initialize({
+        client_id: GOOGLE_CLIENT_ID,
+        callback: handleGoogleCredential,
+      });
+      setGoogleReady(true);
+    };
+    document.body.appendChild(script);
+    return () => {
+      document.body.removeChild(script);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const handleGoogleCredential = async (response: { credential: string }) => {
+    setError(null);
+    setSubmitting(true);
+    try {
+      const user = await loginWithGoogle(response.credential);
+      navigate(ROLE_HOME_PATH[user.role]);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Something went wrong. Please try again.");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleGoogleClick = () => {
+    if (!googleReady) {
+      setError("Google sign-in isn't set up yet — use email and password for now.");
+      return;
+    }
+    window.google?.accounts.id.prompt();
+  };
 
   const handleSubmit = async (event: FormEvent) => {
     event.preventDefault();
@@ -107,8 +169,9 @@ export default function Login() {
         </div>
 
         <button
-          onClick={() => setError("Google sign-in isn't set up yet — use email and password for now.")}
-          className="w-full rounded-lg border border-gray-200 py-3 text-sm font-semibold text-ink-900 hover:bg-gray-50"
+          onClick={handleGoogleClick}
+          disabled={submitting}
+          className="w-full rounded-lg border border-gray-200 py-3 text-sm font-semibold text-ink-900 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60"
         >
           Continue with Google
         </button>
