@@ -58,6 +58,7 @@ interface AppDataContextValue {
   listenerOnline: boolean;
   toggleListenerOnline: () => void;
   listenerEarnings: ListenerEarnings;
+  refreshEarnings: () => void;
 }
 
 const AppDataContext = createContext<AppDataContextValue | null>(null);
@@ -220,11 +221,22 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.role, token]);
 
-  useEffect(() => {
+  // Unlike walletBalance (kept fresh in real time by the WALLET_UPDATED push
+  // below), this had no refresh trigger at all beyond the one-time fetch on
+  // login — a session completing (crediting SESSION_EARNING to the same
+  // wallet) never updated it, so the dashboard's Today/Week/Month/Lifetime
+  // stats went stale for the rest of the session. Re-fetched from the
+  // WALLET_UPDATED handler for exactly that reason.
+  const refreshEarnings = () => {
     if (user?.role !== "listener") return;
     apiRequest<ListenerEarnings>("/listener/earnings", { token })
       .then(setListenerEarnings)
       .catch(() => {});
+  };
+
+  useEffect(() => {
+    refreshEarnings();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.role, token]);
 
   const conversationsBasePath = user?.role === "listener" ? "/listener/conversations" : "/speaker/conversations";
@@ -307,6 +319,14 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
         // stale balance; applying the pushed values has no such race.
         setWalletBalance(payload.balance);
         setTransactions((prev) => [toTransaction(payload.transaction), ...prev]);
+        // Earnings stats (Today/Week/Month/Lifetime) are a separate
+        // aggregate from the wallet balance itself and have no push of their
+        // own — a listener's wallet only ever gets credited via completed
+        // sessions, so any wallet update for a listener means their earnings
+        // stats just changed too.
+        if (myRole === "listener") {
+          refreshEarnings();
+        }
         return;
       }
 
@@ -563,6 +583,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
       listenerOnline,
       toggleListenerOnline,
       listenerEarnings,
+      refreshEarnings,
     }),
     [
       walletBalance,

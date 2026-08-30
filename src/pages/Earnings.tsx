@@ -21,7 +21,7 @@ interface SessionHistoryEntry {
 }
 
 export default function Earnings() {
-  const { listenerEarnings } = useAppData();
+  const { listenerEarnings, refreshEarnings } = useAppData();
   const { token } = useAuth();
   const [completedSessions, setCompletedSessions] = useState<SessionHistoryEntry[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -31,6 +31,13 @@ export default function Earnings() {
       .then((response) => setCompletedSessions(response.data.filter((session) => session.status === "COMPLETED")))
       .catch((err) => setError(err instanceof ApiError ? err.message : "Could not load your earnings history."));
   }, [token]);
+
+  // Same gap as ListenerDashboard: listenerEarnings only otherwise updates
+  // via a live WALLET_UPDATED push, never on a plain route navigation.
+  useEffect(() => {
+    refreshEarnings();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return (
     <div className="mx-auto max-w-5xl space-y-6 p-8">

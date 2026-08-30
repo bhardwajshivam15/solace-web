@@ -1,11 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { Star, PhoneCall, Trophy, Clock } from "lucide-react";
-import {
-  listenerProfile,
-  listenerPerformance,
-  todaysSchedule,
-} from "../data/mockData";
+import { Star, PhoneCall, Trophy } from "lucide-react";
 import { useAppData } from "../context/AppDataContext";
 import { useAuth } from "../context/AuthContext";
 import { apiRequest } from "../lib/apiClient";
@@ -36,15 +31,41 @@ interface RatingSummary {
   reviews: Review[];
 }
 
+interface PerformanceStats {
+  acceptanceRate: number | null;
+  responseTimeSeconds: number | null;
+  completedSessions: number;
+  repeatUsers: number;
+  rank: number | null;
+}
+
+function formatResponseTime(seconds: number | null): string {
+  if (seconds == null) return "—";
+  return seconds < 60 ? `${Math.round(seconds)}s` : `${Math.round(seconds / 60)}m`;
+}
+
 export default function ListenerDashboard() {
-  const { listenerOnline, toggleListenerOnline, listenerEarnings, walletBalance, liveSessions } = useAppData();
-  const { token } = useAuth();
+  const { listenerOnline, toggleListenerOnline, listenerEarnings, refreshEarnings, walletBalance, liveSessions } = useAppData();
+  const { user, token } = useAuth();
   const [earningTab, setEarningTab] = useState<EarningTab>("Today");
   const [ratingSummary, setRatingSummary] = useState<RatingSummary | null>(null);
+  const [performance, setPerformance] = useState<PerformanceStats | null>(null);
+
+  // listenerEarnings otherwise only updates via a live WALLET_UPDATED push
+  // (see AppDataContext) — nothing re-fetched it on a plain route
+  // navigation, so leaving and coming back to this page could still show
+  // stale numbers even though the context itself has fresher data by now.
+  useEffect(() => {
+    refreshEarnings();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     apiRequest<RatingSummary>("/listener/ratings", { token })
       .then(setRatingSummary)
+      .catch(() => {});
+    apiRequest<PerformanceStats>("/listener/performance", { token })
+      .then(setPerformance)
       .catch(() => {});
   }, [token]);
 
@@ -53,10 +74,13 @@ export default function ListenerDashboard() {
       label: "Average Rating",
       value: ratingSummary && ratingSummary.reviewCount > 0 ? `★ ${ratingSummary.averageRating.toFixed(1)}` : "★ —",
     },
-    { label: "Acceptance Rate", value: `${listenerPerformance.acceptanceRate}%` },
-    { label: "Response Time", value: listenerPerformance.responseTime },
-    { label: "Completed Sessions", value: listenerPerformance.completedSessions },
-    { label: "Repeat Users", value: listenerPerformance.repeatUsers },
+    {
+      label: "Acceptance Rate",
+      value: performance?.acceptanceRate != null ? `${Math.round(performance.acceptanceRate)}%` : "—",
+    },
+    { label: "Response Time", value: formatResponseTime(performance?.responseTimeSeconds ?? null) },
+    { label: "Completed Sessions", value: performance?.completedSessions ?? 0 },
+    { label: "Repeat Users", value: performance?.repeatUsers ?? 0 },
   ];
 
   const activeSession = Object.values(liveSessions).find((session) => session.status === "ACTIVE");
@@ -65,7 +89,7 @@ export default function ListenerDashboard() {
     <div className="mx-auto max-w-5xl space-y-6 p-8">
       <div className="flex flex-wrap items-center justify-between gap-4 rounded-3xl bg-gradient-to-br from-brand-600 to-brand-800 p-8 text-white shadow-soft">
         <div>
-          <h1 className="text-2xl font-bold">Welcome back {listenerProfile.name}</h1>
+          <h1 className="text-2xl font-bold">Welcome back {user?.name}</h1>
           <p className="mt-1 text-sm text-brand-100">Today's Earnings</p>
           <p className="mt-1 text-3xl font-bold">₹{listenerEarnings.today}</p>
         </div>
@@ -159,35 +183,13 @@ export default function ListenerDashboard() {
         </div>
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-2">
-        <div className="rounded-2xl border border-gray-100 bg-white p-5">
-          <div className="flex items-center gap-2">
-            <Trophy className="h-4 w-4 text-brand-600" />
-            <p className="font-semibold text-ink-900">Leaderboard</p>
-          </div>
-          <p className="mt-3 text-sm text-gray-500">Current Rank</p>
-          <p className="text-3xl font-bold text-ink-900">#{listenerProfile.rank}</p>
+      <div className="rounded-2xl border border-gray-100 bg-white p-5">
+        <div className="flex items-center gap-2">
+          <Trophy className="h-4 w-4 text-brand-600" />
+          <p className="font-semibold text-ink-900">Leaderboard</p>
         </div>
-
-        <div className="rounded-2xl border border-gray-100 bg-white p-5">
-          <div className="flex items-center gap-2">
-            <Clock className="h-4 w-4 text-brand-600" />
-            <p className="font-semibold text-ink-900">Today's Schedule</p>
-          </div>
-          <div className="mt-3 space-y-2">
-            {todaysSchedule.map((item) => (
-              <div key={item.id} className="flex items-center gap-3 text-sm">
-                <span className="w-20 shrink-0 font-medium text-gray-500">
-                  {item.time}
-                </span>
-                <span className="text-ink-900">{item.title}</span>
-              </div>
-            ))}
-          </div>
-          <p className="mt-3 text-xs text-gray-400">
-            No upcoming bookings yet.
-          </p>
-        </div>
+        <p className="mt-3 text-sm text-gray-500">Current Rank</p>
+        <p className="text-3xl font-bold text-ink-900">{performance?.rank != null ? `#${performance.rank}` : "—"}</p>
       </div>
 
       <div className="rounded-2xl border border-gray-100 bg-white p-5">
