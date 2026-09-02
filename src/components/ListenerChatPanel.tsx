@@ -1,14 +1,26 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
-import { ChevronLeft, Lock, Send, Smile, UserRound, AlertTriangle, Loader2, Check, X, Flag } from "lucide-react";
-import type { LiveSession } from "../types";
+import {
+  ChevronLeft,
+  Lock,
+  Send,
+  Smile,
+  SmilePlus,
+  Reply,
+  UserRound,
+  AlertTriangle,
+  Loader2,
+  Check,
+  X,
+  Flag,
+} from "lucide-react";
+import type { ChatMessage, LiveSession } from "../types";
 import { useAppData } from "../context/AppDataContext";
 import { useAuth } from "../context/AuthContext";
 import { apiRequest, ApiError } from "../lib/apiClient";
+import { QUICK_EMOJIS, REACTION_EMOJIS } from "../lib/emojis";
 import MessageStatusTicks from "./MessageStatusTicks";
 import LiveSessionTimer from "./LiveSessionTimer";
 import ReportConversationModal from "./ReportConversationModal";
-
-const QUICK_EMOJIS = ["😊", "🙂", "❤️", "👍", "😢", "🙏"];
 
 function isSameDay(a: string, b: string): boolean {
   const dateA = new Date(a);
@@ -167,6 +179,7 @@ export default function ListenerChatPanel({
     loadConversation,
     setActiveThread,
     sendMessage,
+    setReaction,
     liveSessions,
     acceptSessionRequest,
     rejectSessionRequest,
@@ -176,6 +189,9 @@ export default function ListenerChatPanel({
   const { token } = useAuth();
   const [draft, setDraft] = useState("");
   const [showEmojis, setShowEmojis] = useState(false);
+  const [replyingTo, setReplyingTo] = useState<ChatMessage | null>(null);
+  const [openReactionPickerFor, setOpenReactionPickerFor] = useState<string | null>(null);
+  const reactionPickerRef = useRef<HTMLDivElement>(null);
   const [sessionBusy, setSessionBusy] = useState(false);
   const [sessionError, setSessionError] = useState<string | null>(null);
   const [showReportModal, setShowReportModal] = useState(false);
@@ -218,12 +234,31 @@ export default function ListenerChatPanel({
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages.length]);
 
+  // Closes the reaction popover on an outside click — see the identical
+  // comment in ChatPanel.tsx.
+  useEffect(() => {
+    if (!openReactionPickerFor) return;
+    const handleClickOutside = (event: MouseEvent) => {
+      if (reactionPickerRef.current && !reactionPickerRef.current.contains(event.target as Node)) {
+        setOpenReactionPickerFor(null);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [openReactionPickerFor]);
+
   const handleSend = (event: FormEvent) => {
     event.preventDefault();
     if (!draft.trim()) return;
-    sendMessage(speakerId, draft);
+    sendMessage(speakerId, draft, replyingTo?.id);
     setDraft("");
     setShowEmojis(false);
+    setReplyingTo(null);
+  };
+
+  const handleToggleReaction = (messageId: string, emoji: string) => {
+    setReaction(speakerId, messageId, emoji);
+    setOpenReactionPickerFor(null);
   };
 
   const handleAccept = async () => {
@@ -335,8 +370,28 @@ export default function ListenerChatPanel({
               </div>
             )}
             <div
-              className={`flex ${message.sender === "listener" ? "justify-end" : "justify-start"}`}
+              className={`group flex items-center gap-1 ${message.sender === "listener" ? "justify-end" : "justify-start"}`}
             >
+              {message.sender === "listener" && (
+                <div className="flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
+                  <button
+                    type="button"
+                    onClick={() => setOpenReactionPickerFor(message.id)}
+                    title="React"
+                    className="rounded-full p-1.5 text-gray-400 hover:bg-gray-100 hover:text-brand-600"
+                  >
+                    <SmilePlus className="h-4 w-4" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setReplyingTo(message)}
+                    title="Reply"
+                    className="rounded-full p-1.5 text-gray-400 hover:bg-gray-100 hover:text-brand-600"
+                  >
+                    <Reply className="h-4 w-4" />
+                  </button>
+                </div>
+              )}
               <div
                 className={`flex items-end gap-2 ${message.sender === "listener" ? "flex-row-reverse" : ""}`}
               >
@@ -345,24 +400,100 @@ export default function ListenerChatPanel({
                     <UserRound className="h-3.5 w-3.5" />
                   </div>
                 )}
-                <div
-                  className={`max-w-sm rounded-2xl px-4 py-3 text-sm ${
-                    message.sender === "listener"
-                      ? "rounded-br-sm bg-brand-600 text-white"
-                      : "rounded-bl-sm bg-gray-100 text-ink-900"
-                  }`}
-                >
-                  <p>{message.text}</p>
+                <div className="relative">
                   <div
-                    className={`mt-1 flex items-center gap-1 text-[10px] ${
-                      message.sender === "listener" ? "justify-end text-brand-100" : "text-gray-400"
+                    className={`max-w-sm rounded-2xl px-4 py-3 text-sm ${
+                      message.sender === "listener"
+                        ? "rounded-br-sm bg-brand-600 text-white"
+                        : "rounded-bl-sm bg-gray-100 text-ink-900"
                     }`}
                   >
-                    {message.time}
-                    {message.sender === "listener" && <MessageStatusTicks status={message.status} />}
+                    {message.replyTo && (
+                      <div
+                        className={`mb-1.5 rounded-lg border-l-2 px-2 py-1 text-xs ${
+                          message.sender === "listener"
+                            ? "border-white/40 bg-white/10 text-brand-50"
+                            : "border-gray-300 bg-gray-200/60 text-gray-600"
+                        }`}
+                      >
+                        <p className="font-medium">
+                          {message.replyTo.sender === "listener" ? "You" : speakerLabel}
+                        </p>
+                        <p className="truncate opacity-80">{message.replyTo.text}</p>
+                      </div>
+                    )}
+                    <p>{message.text}</p>
+                    <div
+                      className={`mt-1 flex items-center gap-1 text-[10px] ${
+                        message.sender === "listener" ? "justify-end text-brand-100" : "text-gray-400"
+                      }`}
+                    >
+                      {message.time}
+                      {message.sender === "listener" && <MessageStatusTicks status={message.status} />}
+                    </div>
                   </div>
+
+                  {message.reactions.length > 0 && (
+                    <div
+                      className={`absolute -bottom-3 flex gap-0.5 ${
+                        message.sender === "listener" ? "right-2" : "left-2"
+                      }`}
+                    >
+                      {message.reactions.map((reaction) => (
+                        <button
+                          key={`${reaction.emoji}-${reaction.sender}`}
+                          type="button"
+                          onClick={() => handleToggleReaction(message.id, reaction.emoji)}
+                          title={reaction.sender === "listener" ? "You reacted" : `${speakerLabel} reacted`}
+                          className="flex h-5 items-center rounded-full border border-gray-100 bg-white px-1.5 text-xs shadow-sm hover:bg-gray-50"
+                        >
+                          {reaction.emoji}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+
+                  {openReactionPickerFor === message.id && (
+                    <div
+                      ref={reactionPickerRef}
+                      className={`absolute bottom-full z-10 mb-1 flex gap-0.5 rounded-full border border-gray-100 bg-white p-1 shadow-soft ${
+                        message.sender === "listener" ? "right-0" : "left-0"
+                      }`}
+                    >
+                      {REACTION_EMOJIS.map((emoji) => (
+                        <button
+                          key={emoji}
+                          type="button"
+                          onClick={() => handleToggleReaction(message.id, emoji)}
+                          className="rounded-full p-1 text-lg hover:bg-gray-50"
+                        >
+                          {emoji}
+                        </button>
+                      ))}
+                    </div>
+                  )}
                 </div>
               </div>
+              {message.sender === "speaker" && (
+                <div className="flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
+                  <button
+                    type="button"
+                    onClick={() => setOpenReactionPickerFor(message.id)}
+                    title="React"
+                    className="rounded-full p-1.5 text-gray-400 hover:bg-gray-100 hover:text-brand-600"
+                  >
+                    <SmilePlus className="h-4 w-4" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setReplyingTo(message)}
+                    title="Reply"
+                    className="rounded-full p-1.5 text-gray-400 hover:bg-gray-100 hover:text-brand-600"
+                  >
+                    <Reply className="h-4 w-4" />
+                  </button>
+                </div>
+              )}
             </div>
           </div>
         ))}
@@ -377,9 +508,26 @@ export default function ListenerChatPanel({
 
       {liveSession?.status === "ACTIVE" ? (
         <form onSubmit={handleSend} className="border-t border-gray-100 px-6 py-4">
+          {replyingTo && (
+            <div className="mb-2 flex items-center justify-between gap-2 rounded-xl bg-gray-50 px-3 py-2 text-xs">
+              <div className="min-w-0">
+                <p className="font-medium text-brand-600">
+                  Replying to {replyingTo.sender === "listener" ? "yourself" : speakerLabel}
+                </p>
+                <p className="truncate text-gray-500">{replyingTo.text}</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setReplyingTo(null)}
+                className="shrink-0 rounded-full p-1 text-gray-400 hover:bg-gray-200 hover:text-gray-600"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          )}
           <div className="relative flex items-center gap-3 rounded-full border border-gray-200 px-4 py-2.5">
             {showEmojis && (
-              <div className="absolute bottom-12 left-0 flex gap-1 rounded-xl border border-gray-100 bg-white p-2 shadow-soft">
+              <div className="absolute bottom-12 left-0 flex max-w-64 flex-wrap gap-1 rounded-xl border border-gray-100 bg-white p-2 shadow-soft">
                 {QUICK_EMOJIS.map((emoji) => (
                   <button
                     key={emoji}

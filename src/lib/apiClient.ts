@@ -24,6 +24,32 @@ export class ApiError extends Error {
   }
 }
 
+// AuthContext subscribes to this on mount so a dead token anywhere in the
+// app (a real 401 from the backend — a missing/expired/invalid JWT, see
+// SecurityConfig's authenticationEntryPoint) forces an immediate logout and
+// redirect, instead of just failing silently on whatever one API call hit
+// it while the rest of the page still acts like everything's fine. Deliberately
+// NOT fired for 403s (FORBIDDEN/ACCOUNT_SUSPENDED/etc.) — those mean "this
+// token is fine, you're just not allowed to do this one thing," not "your
+// session is dead."
+//
+// Carries the token the failing request actually used — AuthContext compares
+// it against whatever token is CURRENT before clearing anything. Without
+// this, a stale request still in flight from a PREVIOUS session (e.g. a
+// leftover fetch made with an old/expired token, resolving after the user
+// has already logged in fresh as someone else) would 401 on that old token
+// and wipe out the brand-new, perfectly valid session it has nothing to do
+// with — "login succeeds, then immediately bounces back" was exactly this.
+type UnauthorizedListener = (tokenUsed: string | null) => void;
+let unauthorizedListeners: UnauthorizedListener[] = [];
+
+export function onUnauthorized(listener: UnauthorizedListener): () => void {
+  unauthorizedListeners.push(listener);
+  return () => {
+    unauthorizedListeners = unauthorizedListeners.filter((l) => l !== listener);
+  };
+}
+
 interface RequestOptions {
   method?: "GET" | "POST" | "PATCH" | "PUT" | "DELETE";
   body?: unknown;
@@ -63,6 +89,13 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
   if (!response.ok) {
     const code = data?.error?.code ?? "UNKNOWN_ERROR";
     const message = data?.error?.message ?? "Something went wrong. Please try again.";
+    // Specifically UNAUTHENTICATED (SecurityConfig's authenticationEntryPoint
+    // — a request that carried no/an invalid/an expired token), not any 401 —
+    // a failed login attempt is also a 401 (INVALID_CREDENTIALS) but there's
+    // no session to tear down in that case.
+    if (code === "UNAUTHENTICATED") {
+      unauthorizedListeners.forEach((listener) => listener(options.token ?? null));
+    }
     throw new ApiError(response.status, code, message);
   }
 

@@ -62,6 +62,12 @@ export default function FindListeners() {
   const [listeners, setListeners] = useState<Listener[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  // The browse list only ever includes listeners who are online right now
+  // (see PublicListenerService.list) — but a direct link (a "new message"
+  // toast, or reopening an existing conversation) must still open even if
+  // that specific listener has since gone offline, so it's fetched
+  // separately by id rather than expected to already be in `listeners`.
+  const [directListener, setDirectListener] = useState<Listener | null>(null);
 
   const [activeFilter, setActiveFilter] = useState(
     filterFromUrl && filters.includes(filterFromUrl) ? filterFromUrl : "All",
@@ -86,10 +92,22 @@ export default function FindListeners() {
       .finally(() => setLoading(false));
   }, [token]);
 
+  // Only runs once the main list has actually loaded and genuinely doesn't
+  // contain this id — avoids an extra fetch for the common case where the
+  // linked listener is already online and already in the list.
+  useEffect(() => {
+    if (!listenerFromUrl || loading) return;
+    if (listeners.some((l) => l.id === listenerFromUrl)) return;
+    apiRequest<{ listener: PublicListener }>(`/listeners/${listenerFromUrl}`, { token })
+      .then((response) => setDirectListener(toListener(response.listener)))
+      .catch(() => setDirectListener(null));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [listenerFromUrl, loading, listeners.length, token]);
+
   // Overlay live online/offline pushes and just-submitted ratings on top of
   // whatever was true at fetch time — a listener toggling status, or this
   // speaker rating them, shows up here without a reload.
-  const listenersWithPresence = listeners.map((listener) => {
+  const applyPresence = (listener: Listener): Listener => {
     const liveRating = liveListenerRatings[listener.id];
     return {
       ...listener,
@@ -97,12 +115,21 @@ export default function FindListeners() {
       rating: liveRating?.rating ?? listener.rating,
       reviewCount: liveRating?.reviewCount ?? listener.reviewCount,
     };
-  });
+  };
+  const listenersWithPresence = listeners.map(applyPresence);
 
-  const selectedListener = listenersWithPresence.find((l) => l.id === selectedId) ?? null;
+  const selectedListener =
+    listenersWithPresence.find((l) => l.id === selectedId) ??
+    (directListener && directListener.id === selectedId ? applyPresence(directListener) : null);
 
   const filtered = listenersWithPresence
     .filter((listener) => {
+      // The initial fetch only ever returns online listeners, but one can go
+      // offline live (a real-time presence push) while this speaker is still
+      // browsing — drop them from the feed the instant that happens, rather
+      // than leaving a now-stale, now-unrequestable card sitting there until
+      // the next reload.
+      if (!listener.online) return false;
       const matchesFilter =
         activeFilter === "All" || listener.tags.includes(activeFilter);
       const matchesQuery = listener.name

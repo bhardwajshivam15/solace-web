@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { AlertCircle, CheckCircle2, Plus, Trash2 } from "lucide-react";
+import { AlertCircle, CheckCircle2, Plus, Trash2, UserPlus } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import { apiRequest, ApiError } from "../lib/apiClient";
 
@@ -8,6 +8,7 @@ interface PlatformSettingsData {
   acceptanceTimeoutSeconds: number;
   reconnectionGracePeriodSeconds: number;
   minimumWalletBalance: number;
+  reviewsToShow: number;
 }
 
 interface PricingConfigData {
@@ -36,6 +37,12 @@ export default function AdminSettings() {
   const [pricingSaving, setPricingSaving] = useState(false);
   const [pricingConfirmation, setPricingConfirmation] = useState<string | null>(null);
   const pricingErrorRef = useRef<HTMLDivElement>(null);
+
+  const [inviteName, setInviteName] = useState("");
+  const [inviteEmail, setInviteEmail] = useState("");
+  const [inviting, setInviting] = useState(false);
+  const [inviteError, setInviteError] = useState<string | null>(null);
+  const [inviteConfirmation, setInviteConfirmation] = useState<string | null>(null);
 
   // The pricing card's error banner renders above the rating-rules table,
   // while "Save Pricing Rules" sits below it — same off-screen-feedback gap
@@ -132,6 +139,30 @@ export default function AdminSettings() {
       seenThresholds.add(rule.minimumRating);
     }
     return null;
+  };
+
+  const handleInviteAdmin = async () => {
+    if (!inviteName.trim() || !inviteEmail.trim()) {
+      setInviteError("Name and email are both required.");
+      return;
+    }
+    setInviting(true);
+    setInviteError(null);
+    try {
+      await apiRequest("/admin/users/invite-admin", {
+        method: "POST",
+        token,
+        body: { name: inviteName.trim(), email: inviteEmail.trim() },
+      });
+      setInviteConfirmation(`Invite sent to ${inviteEmail.trim()}.`);
+      window.setTimeout(() => setInviteConfirmation(null), 2500);
+      setInviteName("");
+      setInviteEmail("");
+    } catch (err) {
+      setInviteError(err instanceof ApiError ? err.message : "Could not send this invite.");
+    } finally {
+      setInviting(false);
+    }
   };
 
   const handleSavePricing = async () => {
@@ -235,6 +266,27 @@ export default function AdminSettings() {
                 type="number"
                 value={settings.minimumWalletBalance}
                 onChange={(e) => handleNumberChange("minimumWalletBalance", e.target.value)}
+                className="mt-1 w-full rounded-xl border border-gray-200 px-4 py-2.5 text-sm text-ink-900 focus:border-brand-400 focus:outline-none"
+              />
+            </div>
+
+            <div className="border-t border-gray-100 pt-4">
+              <p className="text-xs font-semibold uppercase text-gray-400">Landing Page</p>
+            </div>
+
+            <div>
+              <label className="text-xs font-medium text-gray-500">
+                Reviews to Show
+              </label>
+              <p className="text-[11px] text-gray-400">
+                Split as evenly as possible between speaker and listener reviews, highest-rated first.
+                Set to 0 to hide the reviews section entirely.
+              </p>
+              <input
+                type="number"
+                min={0}
+                value={settings.reviewsToShow}
+                onChange={(e) => handleNumberChange("reviewsToShow", e.target.value)}
                 className="mt-1 w-full rounded-xl border border-gray-200 px-4 py-2.5 text-sm text-ink-900 focus:border-brand-400 focus:outline-none"
               />
             </div>
@@ -376,6 +428,60 @@ export default function AdminSettings() {
           <p className="mt-3 flex items-center justify-center gap-2 text-sm text-green-600">
             <CheckCircle2 className="h-4 w-4" />
             {pricingConfirmation}
+          </p>
+        )}
+      </div>
+
+      <div className="mt-6 max-w-xl rounded-2xl border border-gray-100 bg-white p-5">
+        <p className="flex items-center gap-2 font-semibold text-ink-900">
+          <UserPlus className="h-4 w-4 text-brand-600" />
+          Invite Admin
+        </p>
+        <p className="mt-1 text-xs text-gray-400">
+          Creates the account immediately and emails them a link to set their own password —
+          only works for an email that isn't already a speaker, listener, or admin.
+        </p>
+
+        {inviteError && (
+          <div className="mt-4 flex items-start gap-2 rounded-xl bg-red-50 px-3 py-2.5 text-sm text-red-600">
+            <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+            {inviteError}
+          </div>
+        )}
+
+        <div className="mt-4 space-y-4">
+          <div>
+            <label className="text-xs font-medium text-gray-500">Name</label>
+            <input
+              type="text"
+              value={inviteName}
+              onChange={(e) => setInviteName(e.target.value)}
+              className="mt-1 w-full rounded-xl border border-gray-200 px-4 py-2.5 text-sm text-ink-900 focus:border-brand-400 focus:outline-none"
+            />
+          </div>
+          <div>
+            <label className="text-xs font-medium text-gray-500">Email</label>
+            <input
+              type="email"
+              value={inviteEmail}
+              onChange={(e) => setInviteEmail(e.target.value)}
+              className="mt-1 w-full rounded-xl border border-gray-200 px-4 py-2.5 text-sm text-ink-900 focus:border-brand-400 focus:outline-none"
+            />
+          </div>
+        </div>
+
+        <button
+          onClick={handleInviteAdmin}
+          disabled={inviting}
+          className="mt-5 w-full rounded-xl bg-brand-600 py-2.5 text-sm font-semibold text-white hover:bg-brand-700 disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          {inviting ? "Sending invite…" : "Send Invite"}
+        </button>
+
+        {inviteConfirmation && (
+          <p className="mt-3 flex items-center justify-center gap-2 text-sm text-green-600">
+            <CheckCircle2 className="h-4 w-4" />
+            {inviteConfirmation}
           </p>
         )}
       </div>

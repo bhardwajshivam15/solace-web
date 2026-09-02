@@ -17,6 +17,7 @@ import {
   LogOut,
   AlertTriangle,
   Ticket,
+  Wallet,
 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 
@@ -27,6 +28,7 @@ const navItems = [
   { to: "/admin/sessions", label: "Sessions", icon: History },
   { to: "/admin/transactions", label: "Transactions", icon: Receipt },
   { to: "/admin/withdrawals", label: "Withdrawals", icon: Banknote },
+  { to: "/admin/platform-wallet", label: "Platform Wallet", icon: Wallet },
   { to: "/admin/reports", label: "Reports", icon: FileBarChart },
   { to: "/admin/leaderboard", label: "Leaderboard", icon: Trophy },
   { to: "/admin/notifications", label: "Notifications", icon: Bell },

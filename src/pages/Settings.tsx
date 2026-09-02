@@ -3,19 +3,19 @@ import { useNavigate } from "react-router-dom";
 import { AlertTriangle, AlertCircle } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import { apiRequest, ApiError } from "../lib/apiClient";
+import PlatformFeedbackCard from "../components/PlatformFeedbackCard";
 
-type PrefKey = "email" | "push" | "sms";
+type PrefKey = "email" | "push";
 
 const prefLabels: Record<PrefKey, string> = {
   email: "Email notifications",
   push: "Push notifications",
-  sms: "SMS notifications",
 };
 
 export default function Settings() {
   const { user, token, logout } = useAuth();
   const navigate = useNavigate();
-  const [preferences, setPreferences] = useState({ email: true, push: true, sms: false });
+  const [preferences, setPreferences] = useState({ email: true, push: true });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
@@ -106,6 +106,8 @@ export default function Settings() {
             ))}
         </div>
       </div>
+
+      <PlatformFeedbackCard />
 
       <div className="mt-6 rounded-2xl border border-red-200 bg-red-50/40 p-6">
         <div className="flex items-center gap-2 text-red-500">
