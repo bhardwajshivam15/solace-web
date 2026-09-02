@@ -18,15 +18,12 @@ import {
   BarChart3,
   UserX,
 } from "lucide-react";
-import {
-  withdrawalRequests as seedWithdrawalRequests,
-  platformHealth as platformHealthMock,
-  adminOverviewStats,
-} from "../data/mockData";
+import { platformHealth as platformHealthMock } from "../data/mockData";
 import { useAuth } from "../context/AuthContext";
 import { apiRequest, ApiError, resolveAssetUrl } from "../lib/apiClient";
 import RevenueChart from "../components/RevenueChart";
 import SessionsBarChart from "../components/SessionsBarChart";
+import type { AdminWithdrawalRequestRecord } from "../types";
 
 interface PendingApplication {
   id: string;
@@ -122,17 +119,13 @@ function ApplicationAvatar({ name, avatar }: { name: string; avatar: string | nu
   );
 }
 
-// Pending Withdrawals is the only card still on mock data — there's no real
-// withdrawal-payout backend yet (not just a missing endpoint, no
-// entity/table exists), unlike everything else here which now reads real
-// platform data (Reported Conversations included, via the new report package).
-function buildStats(overview: AdminOverview | null) {
+function buildStats(overview: AdminOverview | null, processingWithdrawals: number) {
   return [
     { label: "Total Users", value: overview ? overview.totalUsers.toLocaleString("en-IN") : "—", icon: Users },
     { label: "Active Listeners", value: overview ? overview.activeListeners.toLocaleString("en-IN") : "—", icon: Headphones },
     { label: "Today's Sessions", value: overview ? overview.todaysSessions.toLocaleString("en-IN") : "—", icon: History },
     { label: "Today's Revenue", value: overview ? `₹ ${overview.todaysRevenue.toFixed(2)}` : "—", icon: IndianRupee },
-    { label: "Pending Withdrawals", value: adminOverviewStats.pendingWithdrawals, icon: Banknote },
+    { label: "Processing Withdrawals", value: processingWithdrawals, icon: Banknote },
     { label: "Pending Approvals", value: overview ? overview.pendingApprovals.toLocaleString("en-IN") : "—", icon: UserCheck },
     { label: "Online Users", value: overview ? overview.onlineUsers.toLocaleString("en-IN") : "—", icon: Wifi },
     { label: "Online Listeners", value: overview ? overview.onlineListeners.toLocaleString("en-IN") : "—", icon: Radio },
@@ -140,10 +133,10 @@ function buildStats(overview: AdminOverview | null) {
   ];
 }
 
-const statusStyles: Record<string, string> = {
-  Pending: "bg-amber-50 text-amber-600",
-  Approved: "bg-green-50 text-green-600",
-  Rejected: "bg-red-50 text-red-500",
+const withdrawalStatusStyles: Record<string, string> = {
+  PROCESSING: "bg-amber-50 text-amber-600",
+  SUCCESS: "bg-green-50 text-green-600",
+  FAILED: "bg-red-50 text-red-500",
 };
 
 const priorityStyles: Record<string, string> = {
@@ -175,7 +168,7 @@ export default function AdminDashboard() {
   const { token } = useAuth();
   const [period, setPeriod] = useState<Period>("This Week");
   const [periodMenuOpen, setPeriodMenuOpen] = useState(false);
-  const [withdrawals, setWithdrawals] = useState(seedWithdrawalRequests);
+  const [withdrawals, setWithdrawals] = useState<AdminWithdrawalRequestRecord[]>([]);
 
   const [applications, setApplications] = useState<PendingApplication[]>([]);
   const [applicationsLoading, setApplicationsLoading] = useState(true);
@@ -236,7 +229,13 @@ export default function AdminDashboard() {
       .catch(() => {});
   }, [token]);
 
-  const stats = buildStats(overview);
+  useEffect(() => {
+    apiRequest<{ data: AdminWithdrawalRequestRecord[] }>("/admin/withdrawals", { token })
+      .then((response) => setWithdrawals(response.data))
+      .catch(() => {});
+  }, [token]);
+
+  const stats = buildStats(overview, withdrawals.filter((w) => w.status === "PROCESSING").length);
 
   const resolveReport = async (id: string) => {
     setReportsUpdatingId(id);
@@ -269,12 +268,6 @@ export default function AdminDashboard() {
   };
 
   const activeData = revenueOverview ? (period === "This Week" ? revenueOverview.weekly : revenueOverview.monthly) : [];
-
-  const setWithdrawalStatus = (id: string, status: "Approved" | "Rejected") => {
-    setWithdrawals((prev) =>
-      prev.map((request) => (request.id === id ? { ...request, status } : request)),
-    );
-  };
 
   return (
     <div className="p-8">
@@ -437,45 +430,30 @@ export default function AdminDashboard() {
         <div className="rounded-2xl border border-gray-100 bg-white p-5">
           <p className="font-semibold text-ink-900">Recent Withdrawals</p>
           <div className="mt-4 space-y-4">
-            {withdrawals.map((request) => (
+            {withdrawals.slice(0, 5).map((request) => (
               <div key={request.id} className="flex items-center gap-3">
-                <img
-                  src={request.avatar}
-                  alt={request.name}
-                  className="h-9 w-9 rounded-full object-cover"
-                />
+                <div className="flex h-9 w-9 items-center justify-center rounded-full bg-brand-100 text-xs font-semibold text-brand-700">
+                  {request.listenerName.charAt(0).toUpperCase()}
+                </div>
                 <div className="flex-1">
                   <p className="text-sm font-medium text-ink-900">
-                    {request.name}
+                    {request.listenerName}
                   </p>
-                  <p className="text-xs text-gray-400">{request.date}</p>
+                  <p className="text-xs text-gray-400">
+                    ₹{request.amount.toLocaleString("en-IN")} · {new Date(request.createdAt).toLocaleDateString("en-IN")}
+                  </p>
                 </div>
-                {request.status === "Pending" ? (
-                  <div className="flex items-center gap-2">
-                    <button
-                      onClick={() => setWithdrawalStatus(request.id, "Approved")}
-                      className="flex h-7 w-7 items-center justify-center rounded-full bg-green-50 text-green-600 hover:bg-green-100"
-                    >
-                      <Check className="h-4 w-4" />
-                    </button>
-                    <button
-                      onClick={() => setWithdrawalStatus(request.id, "Rejected")}
-                      className="flex h-7 w-7 items-center justify-center rounded-full bg-red-50 text-red-500 hover:bg-red-100"
-                    >
-                      <X className="h-4 w-4" />
-                    </button>
-                  </div>
-                ) : (
-                  <span
-                    className={`rounded-full px-3 py-1 text-xs font-medium ${
-                      statusStyles[request.status]
-                    }`}
-                  >
-                    {request.status}
-                  </span>
-                )}
+                <span
+                  className={`rounded-full px-3 py-1 text-xs font-medium ${withdrawalStatusStyles[request.status]}`}
+                >
+                  {request.status}
+                </span>
               </div>
             ))}
+
+            {withdrawals.length === 0 && (
+              <p className="py-6 text-center text-sm text-gray-400">No withdrawals yet.</p>
+            )}
           </div>
         </div>
 

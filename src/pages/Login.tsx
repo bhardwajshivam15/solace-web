@@ -21,12 +21,16 @@ declare global {
 
 export default function Login() {
   const navigate = useNavigate();
-  const { login, loginWithGoogle } = useAuth();
+  const { login, reactivateAccount, loginWithGoogle } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [googleReady, setGoogleReady] = useState(false);
+  // Shown instead of the plain error banner when login fails specifically
+  // because this account deactivated itself within the last 30 days —
+  // offers a one-click way to undo that, rather than a dead end.
+  const [canReactivate, setCanReactivate] = useState(false);
 
   // Loaded once, only on this page — no reason to pull Google's script in
   // anywhere else. Silently stays unready if no client id is configured
@@ -77,11 +81,29 @@ export default function Login() {
   const handleSubmit = async (event: FormEvent) => {
     event.preventDefault();
     setError(null);
+    setCanReactivate(false);
     setSubmitting(true);
     try {
       const user = await login(email, password);
       navigate(ROLE_HOME_PATH[user.role]);
     } catch (err) {
+      if (err instanceof ApiError && err.code === "ACCOUNT_DEACTIVATED_RECOVERABLE") {
+        setCanReactivate(true);
+      }
+      setError(err instanceof ApiError ? err.message : "Something went wrong. Please try again.");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleReactivate = async () => {
+    setError(null);
+    setSubmitting(true);
+    try {
+      const user = await reactivateAccount(email, password);
+      navigate(ROLE_HOME_PATH[user.role]);
+    } catch (err) {
+      setCanReactivate(false);
       setError(err instanceof ApiError ? err.message : "Something went wrong. Please try again.");
     } finally {
       setSubmitting(false);
@@ -104,9 +126,21 @@ export default function Login() {
         </p>
 
         {error && (
-          <div className="mt-5 flex items-start gap-2 rounded-lg bg-red-50 px-3 py-2.5 text-sm text-red-600">
-            <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
-            {error}
+          <div className="mt-5 rounded-lg bg-red-50 px-3 py-2.5 text-sm text-red-600">
+            <div className="flex items-start gap-2">
+              <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+              {error}
+            </div>
+            {canReactivate && (
+              <button
+                type="button"
+                onClick={handleReactivate}
+                disabled={submitting}
+                className="mt-2.5 w-full rounded-lg bg-red-600 py-2 text-sm font-semibold text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {submitting ? "Reactivating…" : "Reactivate my account"}
+              </button>
+            )}
           </div>
         )}
 

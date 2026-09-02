@@ -9,7 +9,6 @@ import {
   FileText,
   Mail,
   Smartphone,
-  MessageSquare,
 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import { apiRequest, resolveAssetUrl, ApiError } from "../lib/apiClient";
@@ -20,15 +19,14 @@ interface SpeakerProfileData {
   bio: string;
   preferredLanguage: string;
   timezone: string;
-  notificationPreferences: { email: boolean; push: boolean; sms: boolean };
+  notificationPreferences: { email: boolean; push: boolean };
 }
 
-type PrefKey = "email" | "push" | "sms";
+type PrefKey = "email" | "push";
 
 const preferenceOptions: { key: PrefKey; label: string; description: string; icon: typeof Mail }[] = [
   { key: "email", label: "Email notifications", description: "Session updates and receipts", icon: Mail },
   { key: "push", label: "Push notifications", description: "Real-time alerts on your device", icon: Smartphone },
-  { key: "sms", label: "SMS notifications", description: "Text alerts for urgent updates", icon: MessageSquare },
 ];
 
 export default function Profile() {
@@ -46,7 +44,7 @@ export default function Profile() {
   const [bio, setBio] = useState("");
   const [preferredLanguage, setPreferredLanguage] = useState("");
   const [timezone, setTimezone] = useState("");
-  const [preferences, setPreferences] = useState({ email: true, push: true, sms: false });
+  const [preferences, setPreferences] = useState({ email: true, push: true });
 
   useEffect(() => {
     apiRequest<{ profile: SpeakerProfileData }>("/speaker/profile", { token })

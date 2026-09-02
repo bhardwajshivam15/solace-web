@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useNavigate, useParams, Link } from "react-router-dom";
+import { useParams, Link } from "react-router-dom";
 import { ArrowLeft, Check, X, Mail, Calendar, IndianRupee, Tag, Languages, FileText, ShieldCheck } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import { apiRequest, ApiError, resolveAssetUrl } from "../lib/apiClient";
@@ -47,7 +47,6 @@ function AgreementRow({ label, accepted, version }: { label: string; accepted: b
 export default function AdminListenerApplicationDetail() {
   const { id } = useParams<{ id: string }>();
   const { token } = useAuth();
-  const navigate = useNavigate();
   const [application, setApplication] = useState<ApplicationDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -67,9 +66,10 @@ export default function AdminListenerApplicationDetail() {
     setError(null);
     try {
       await apiRequest(`/admin/listener-applications/${id}/${action}`, { method: "POST", token });
-      navigate("/admin");
+      setApplication((prev) => (prev ? { ...prev, status: action === "approve" ? "APPROVED" : "REJECTED" } : prev));
     } catch (err) {
       setError(err instanceof ApiError ? err.message : `Could not ${action} this application.`);
+    } finally {
       setDeciding(false);
     }
   };

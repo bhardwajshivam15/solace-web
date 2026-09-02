@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { MessageCircle, AlertCircle } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
@@ -34,29 +34,49 @@ export default function SpeakerMessages() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  const loadThreads = useCallback(
+    (showSpinner: boolean) => {
+      if (!user) return;
+      if (showSpinner) setLoading(true);
+      apiRequest<{ data: RawConversationSummary[] }>("/speaker/conversations", { token })
+        .then(async (response) => {
+          await ensureKeysRegistered(user.id, token);
+          const decorated = await Promise.all(
+            response.data.map(async (raw): Promise<ConversationSummary> => {
+              let lastMessage = "";
+              if (raw.lastMessageCiphertext && raw.lastMessageIv) {
+                const sharedKey = await getSharedKey(raw.listenerId, token);
+                lastMessage = sharedKey
+                  ? await decryptText(sharedKey, raw.lastMessageCiphertext, raw.lastMessageIv)
+                  : "[Encrypted message]";
+              }
+              return { ...raw, lastMessage };
+            }),
+          );
+          setThreads(decorated);
+        })
+        .catch((err) => setError(err instanceof ApiError ? err.message : "Could not load your messages."))
+        .finally(() => setLoading(false));
+    },
+    [user, token],
+  );
+
   useEffect(() => {
-    if (!user) return;
-    setLoading(true);
-    apiRequest<{ data: RawConversationSummary[] }>("/speaker/conversations", { token })
-      .then(async (response) => {
-        await ensureKeysRegistered(user.id, token);
-        const decorated = await Promise.all(
-          response.data.map(async (raw): Promise<ConversationSummary> => {
-            let lastMessage = "";
-            if (raw.lastMessageCiphertext && raw.lastMessageIv) {
-              const sharedKey = await getSharedKey(raw.listenerId, token);
-              lastMessage = sharedKey
-                ? await decryptText(sharedKey, raw.lastMessageCiphertext, raw.lastMessageIv)
-                : "[Encrypted message]";
-            }
-            return { ...raw, lastMessage };
-          }),
-        );
-        setThreads(decorated);
-      })
-      .catch((err) => setError(err instanceof ApiError ? err.message : "Could not load your messages."))
-      .finally(() => setLoading(false));
+    loadThreads(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user, token]);
+
+  // A listener messaging this speaker for the very first time creates a
+  // conversation the initial fetch above never saw — see the identical
+  // comment in ListenerMessages.tsx for why a re-fetch (not just merging the
+  // live push) is needed to pick up a brand-new thread.
+  const knownListenerIds = useRef(new Set<string>());
+  knownListenerIds.current = new Set(threads.map((t) => t.listenerId));
+  useEffect(() => {
+    const hasNewThread = Object.keys(liveThreadUpdates).some((id) => !knownListenerIds.current.has(id));
+    if (hasNewThread) loadThreads(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [liveThreadUpdates]);
 
   // Live WS updates (real-time only, never persisted) override the initial
   // REST-fetched preview/timestamp and bubble the conversation to the top —

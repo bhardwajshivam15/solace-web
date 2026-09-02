@@ -10,6 +10,11 @@ export interface Listener {
   online: boolean;
 }
 
+export interface MessageReaction {
+  emoji: string;
+  sender: "listener" | "speaker";
+}
+
 export interface ChatMessage {
   id: string;
   sender: "listener" | "speaker";
@@ -18,6 +23,9 @@ export interface ChatMessage {
   /** Raw ISO timestamp — used for grouping messages under date separators (Today/Yesterday/...). */
   createdAt: string;
   status?: "sent" | "delivered" | "read";
+  /** Populated by looking the id up in the same (already-decrypted) local thread — never fetched separately. */
+  replyTo?: { id: string; text: string; sender: "listener" | "speaker" } | null;
+  reactions: MessageReaction[];
 }
 
 export type SessionStatus =
@@ -66,14 +74,29 @@ export interface Transaction {
   icon: "wallet" | "session";
 }
 
-export interface WithdrawalRequest {
+export type PayoutMethodType = "BANK" | "UPI";
+export type PayoutStatus = "PROCESSING" | "SUCCESS" | "FAILED";
+
+export interface PayoutDestination {
+  type: PayoutMethodType;
+  accountHolderName: string | null;
+  maskedAccountNumber: string | null;
+  ifscCode: string | null;
+  maskedUpiVpa: string | null;
+}
+
+export interface WithdrawalRequestRecord {
   id: string;
-  name: string;
-  avatar: string;
-  date: string;
-  status: "Pending" | "Approved" | "Rejected";
-  amount?: number;
-  method?: "Bank" | "UPI";
+  amount: number;
+  currency: string;
+  status: PayoutStatus;
+  failureReason: string | null;
+  createdAt: string;
+  completedAt: string | null;
+}
+
+export interface AdminWithdrawalRequestRecord extends WithdrawalRequestRecord {
+  listenerName: string;
 }
 
 export interface ListenerApplication {
@@ -156,7 +179,7 @@ export interface SpeakerProfile {
   bio: string;
   preferredLanguage: string;
   timezone: string;
-  notificationPreferences: { email: boolean; push: boolean; sms: boolean };
+  notificationPreferences: { email: boolean; push: boolean };
 }
 
 export interface ListenerProfileDetails {
@@ -198,14 +221,6 @@ export interface ListenerSessionRecord {
   earning: number;
   rating: number;
   status: "completed" | "cancelled";
-}
-
-export interface ListenerWithdrawalRecord {
-  id: string;
-  amount: number;
-  date: string;
-  status: "Pending" | "Approved" | "Rejected" | "Paid";
-  method: "Bank" | "UPI";
 }
 
 export interface RatingDistributionEntry {

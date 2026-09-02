@@ -1,5 +1,5 @@
 import type { MouseEvent } from "react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, Navigate } from "react-router-dom";
 import {
   Heart,
@@ -10,6 +10,10 @@ import {
   MessageCircle,
   Smile,
   ChevronDown,
+  ChevronLeft,
+  ChevronRight,
+  Star,
+  Quote,
 } from "lucide-react";
 import heroFamily from "../assets/hero-family.png";
 import { useAuth, ROLE_HOME_PATH } from "../context/AuthContext";
@@ -19,6 +23,7 @@ const navLinks = [
   { label: "Home", id: null },
   { label: "How It Works", id: "how-it-works" },
   { label: "Become a Listener", id: "become-a-listener" },
+  { label: "Reviews", id: "reviews" },
   { label: "About Us", id: "about" },
   { label: "FAQ", id: "faq" },
 ];
@@ -61,6 +66,10 @@ const DEFAULT_FAQS = [
   },
 ];
 
+// Cycled by index, purely for visual variety between review-card avatars —
+// no meaning attached to which color a given review gets.
+const AVATAR_COLORS = ["bg-brand-500", "bg-amber-500", "bg-emerald-500", "bg-sky-500", "bg-rose-500"];
+
 interface PublicCmsPage {
   title: string;
   slug: string;
@@ -70,6 +79,13 @@ interface PublicCmsPage {
 interface Faq {
   question: string;
   answer: string;
+}
+
+interface PlatformReview {
+  displayName: string;
+  role: "speaker" | "listener";
+  rating: number;
+  comment: string;
 }
 
 async function fetchPublicPage(slug: string): Promise<PublicCmsPage | null> {
@@ -106,6 +122,10 @@ export default function LandingPage() {
   const { user, isAuthenticated } = useAuth();
   const [aboutText, setAboutText] = useState(DEFAULT_ABOUT_TEXT);
   const [faqs, setFaqs] = useState<Faq[]>(DEFAULT_FAQS);
+  const [reviews, setReviews] = useState<PlatformReview[]>([]);
+  const reviewsTrackRef = useRef<HTMLDivElement>(null);
+  const reviewsPausedRef = useRef(false);
+  const reviewsResumeTimeoutRef = useRef<number | null>(null);
 
   useEffect(() => {
     // Fall back to the hardcoded copy above if the backend is unreachable or
@@ -116,7 +136,50 @@ export default function LandingPage() {
     fetchPublicPage("faq").then((page) => {
       if (page) setFaqs(parseFaqs(page.content));
     });
+    // No fallback content here, unlike about/faq — with zero reviews
+    // submitted yet there's nothing honest to show, so the section below
+    // just doesn't render at all rather than displaying made-up quotes.
+    apiRequest<{ data: PlatformReview[] }>("/platform-reviews")
+      .then((response) => setReviews(response.data))
+      .catch(() => {});
   }, []);
+
+  // Drives the reviews strip via real scrollLeft (not a CSS keyframe
+  // animation) specifically so the left/right buttons below can share the
+  // exact same scroll position — a transform-based marquee can't be nudged
+  // by a button click, since there's nothing for scrollBy() to act on. The
+  // review list is rendered twice back to back (see the JSX below); once
+  // scrollLeft passes the width of one full copy, it's snapped back by that
+  // same width, which is invisible since the content repeats identically.
+  useEffect(() => {
+    const track = reviewsTrackRef.current;
+    if (!track || reviews.length === 0) return;
+
+    let frameId: number;
+    const step = () => {
+      if (!reviewsPausedRef.current) {
+        track.scrollLeft += 0.6;
+        const oneCopyWidth = track.scrollWidth / 2;
+        if (track.scrollLeft >= oneCopyWidth) {
+          track.scrollLeft -= oneCopyWidth;
+        }
+      }
+      frameId = requestAnimationFrame(step);
+    };
+    frameId = requestAnimationFrame(step);
+    return () => cancelAnimationFrame(frameId);
+  }, [reviews.length]);
+
+  // Manual nudge — pauses the auto-scroll briefly so it doesn't fight the
+  // smooth-scroll animation, then resumes on its own.
+  const shiftReviews = (direction: 1 | -1) => {
+    reviewsPausedRef.current = true;
+    reviewsTrackRef.current?.scrollBy({ left: direction * 344, behavior: "smooth" });
+    if (reviewsResumeTimeoutRef.current) window.clearTimeout(reviewsResumeTimeoutRef.current);
+    reviewsResumeTimeoutRef.current = window.setTimeout(() => {
+      reviewsPausedRef.current = false;
+    }, 1500);
+  };
 
   // Logged-in users don't need the marketing page or its signup-flavored
   // CTAs — send them straight to whatever "home" means for their role.
@@ -272,6 +335,76 @@ export default function LandingPage() {
           </Link>
         </div>
       </section>
+
+      {reviews.length > 0 && (
+        <section id="reviews" className="scroll-mt-20 overflow-hidden py-16">
+          <div className="mx-auto max-w-4xl px-8 text-center lg:px-16">
+            <h2 className="text-3xl font-bold text-ink-900">What Our Community Says</h2>
+            <p className="mt-2 text-gray-500">
+              Real feedback from the speakers and listeners using Solace.
+            </p>
+          </div>
+
+          <div className="relative mt-10">
+            <button
+              type="button"
+              onClick={() => shiftReviews(-1)}
+              aria-label="Scroll reviews left"
+              className="absolute left-2 top-1/2 z-10 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full bg-white text-ink-900 shadow-soft hover:bg-gray-50 lg:left-6"
+            >
+              <ChevronLeft className="h-5 w-5" />
+            </button>
+            <button
+              type="button"
+              onClick={() => shiftReviews(1)}
+              aria-label="Scroll reviews right"
+              className="absolute right-2 top-1/2 z-10 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full bg-white text-ink-900 shadow-soft hover:bg-gray-50 lg:right-6"
+            >
+              <ChevronRight className="h-5 w-5" />
+            </button>
+
+            {/* Always auto-scrolling (see the effect above) — the review
+                list is rendered TWICE back to back so the loop reset is
+                invisible, and native scrollLeft (not a CSS transform) is
+                what both the auto-scroll and the buttons above act on, so
+                they can't fight each other. */}
+            <div
+              ref={reviewsTrackRef}
+              className="flex gap-6 overflow-x-hidden scroll-smooth px-8 [mask-image:linear-gradient(to_right,transparent,black_5%,black_95%,transparent)] lg:px-16"
+            >
+              {[...reviews, ...reviews].map((review, index) => (
+                <div
+                  key={`${review.displayName}-${index}`}
+                  className="relative w-80 shrink-0 rounded-3xl border border-gray-100 bg-white p-6 shadow-soft"
+                >
+                  <Quote className="absolute right-5 top-5 h-8 w-8 text-brand-50" fill="currentColor" />
+                  <div className="flex items-center gap-3">
+                    <div className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-sm font-semibold text-white ${AVATAR_COLORS[index % AVATAR_COLORS.length]}`}>
+                      {review.displayName.slice(0, 1).toUpperCase()}
+                    </div>
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-semibold text-ink-900">{review.displayName}</p>
+                      <p className="text-xs text-gray-400">{review.role === "speaker" ? "Speaker" : "Listener"}</p>
+                    </div>
+                  </div>
+
+                  <div className="mt-4 flex items-center gap-0.5">
+                    {[1, 2, 3, 4, 5].map((value) => (
+                      <Star
+                        key={value}
+                        className={`h-3.5 w-3.5 ${
+                          value <= review.rating ? "fill-amber-400 text-amber-400" : "text-gray-200"
+                        }`}
+                      />
+                    ))}
+                  </div>
+                  <p className="relative mt-3 text-sm leading-relaxed text-gray-600">{review.comment}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
+      )}
 
       <section id="about" className="scroll-mt-20 bg-gray-50 px-8 py-16 lg:px-16">
         <div className="mx-auto max-w-3xl text-center">

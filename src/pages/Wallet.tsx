@@ -10,9 +10,34 @@ const COUPON_CHECK_DEBOUNCE_MS = 450;
 
 type CouponStatus = "idle" | "checking" | "valid" | "invalid";
 
+interface RazorpayCheckoutResponse {
+  razorpay_order_id: string;
+  razorpay_payment_id: string;
+  razorpay_signature: string;
+}
+
+interface RazorpayCheckoutOptions {
+  key: string;
+  amount: number;
+  currency: string;
+  order_id: string;
+  name: string;
+  description: string;
+  handler: (response: RazorpayCheckoutResponse) => void;
+  prefill?: { email?: string };
+  theme?: { color?: string };
+  modal?: { ondismiss?: () => void };
+}
+
+declare global {
+  interface Window {
+    Razorpay?: new (options: RazorpayCheckoutOptions) => { open: () => void };
+  }
+}
+
 export default function Wallet() {
-  const { walletBalance, transactions, addMoney } = useAppData();
-  const { token } = useAuth();
+  const { walletBalance, transactions, createRechargeOrder, verifyRechargePayment } = useAppData();
+  const { token, user } = useAuth();
   const [selectedAmount, setSelectedAmount] = useState(1000);
   const [couponCode, setCouponCode] = useState("");
   const [couponStatus, setCouponStatus] = useState<CouponStatus>("idle");
@@ -20,6 +45,22 @@ export default function Wallet() {
   const [confirmation, setConfirmation] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [razorpayReady, setRazorpayReady] = useState(false);
+
+  // Loaded once, only on this page — same dynamic-<script>-tag technique
+  // already used for Google Identity Services on Login.tsx. Razorpay
+  // Checkout itself needs no API key just to load; the actual test-mode
+  // key id comes back from the backend per-order (see handleAddMoney).
+  useEffect(() => {
+    const script = document.createElement("script");
+    script.src = "https://checkout.razorpay.com/v1/checkout.js";
+    script.async = true;
+    script.onload = () => setRazorpayReady(true);
+    document.body.appendChild(script);
+    return () => {
+      document.body.removeChild(script);
+    };
+  }, []);
 
   // Live preview as the code is typed, debounced — matches the same
   // idle/checking/valid/invalid UX convention used for username availability
@@ -51,21 +92,55 @@ export default function Wallet() {
   }, [couponCode, selectedAmount, token]);
 
   const handleAddMoney = async () => {
+    if (!razorpayReady || !window.Razorpay) {
+      setError("The payment gateway is still loading — please try again in a moment.");
+      return;
+    }
     setSubmitting(true);
     setError(null);
     try {
-      const result = await addMoney(selectedAmount, couponCode.trim() || undefined);
-      setConfirmation(
-        result.bonusApplied > 0
-          ? `Added ₹${selectedAmount.toLocaleString("en-IN")} + ₹${result.bonusApplied.toLocaleString("en-IN")} bonus to your wallet.`
-          : `Added ₹${selectedAmount.toLocaleString("en-IN")} to your wallet.`,
-      );
-      setCouponCode("");
-      setCouponStatus("idle");
-      window.setTimeout(() => setConfirmation(null), 3000);
+      const order = await createRechargeOrder(selectedAmount, couponCode.trim() || undefined);
+
+      const checkout = new window.Razorpay({
+        key: order.keyId,
+        amount: Math.round(order.amount * 100),
+        currency: order.currency,
+        order_id: order.razorpayOrderId,
+        name: "Solace",
+        description: "Wallet recharge",
+        prefill: { email: user?.email },
+        theme: { color: "#7c3aed" },
+        handler: (response) => {
+          verifyRechargePayment({
+            razorpayOrderId: response.razorpay_order_id,
+            razorpayPaymentId: response.razorpay_payment_id,
+            razorpaySignature: response.razorpay_signature,
+          })
+            .then((result) => {
+              setConfirmation(
+                result.bonusApplied > 0
+                  ? `Added ₹${selectedAmount.toLocaleString("en-IN")} + ₹${result.bonusApplied.toLocaleString("en-IN")} bonus to your wallet.`
+                  : `Added ₹${selectedAmount.toLocaleString("en-IN")} to your wallet.`,
+              );
+              setCouponCode("");
+              setCouponStatus("idle");
+              window.setTimeout(() => setConfirmation(null), 3000);
+            })
+            .catch((err) => {
+              setError(err instanceof ApiError ? err.message : "Payment could not be verified. If money was deducted, it will be refunded.");
+            })
+            .finally(() => setSubmitting(false));
+        },
+        modal: {
+          // The user closed Checkout without completing (or cancelling) a
+          // payment — nothing to verify, no error to show, just stop
+          // showing "Adding…" forever.
+          ondismiss: () => setSubmitting(false),
+        },
+      });
+      checkout.open();
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Could not add money to your wallet. Please try again.");
-    } finally {
+      setError(err instanceof ApiError ? err.message : "Could not start the payment. Please try again.");
       setSubmitting(false);
     }
   };
@@ -145,8 +220,11 @@ export default function Wallet() {
           disabled={submitting || couponStatus === "checking" || couponStatus === "invalid"}
           className="mt-4 w-full rounded-xl bg-brand-600 py-3 text-sm font-semibold text-white hover:bg-brand-700 disabled:cursor-not-allowed disabled:opacity-60"
         >
-          {submitting ? "Adding…" : "Add Money"}
+          {submitting ? "Adding…" : `Add Money — ₹${selectedAmount.toLocaleString("en-IN")}`}
         </button>
+        <p className="mt-2 text-center text-[11px] text-gray-400">
+          Opens Razorpay's secure checkout. Test mode only — no real money is charged.
+        </p>
         {confirmation && (
           <p className="mt-3 flex items-center justify-center gap-2 text-sm text-green-600">
             <CheckCircle2 className="h-4 w-4" />

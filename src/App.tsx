@@ -50,6 +50,7 @@ import AdminLeaderboard from "./pages/AdminLeaderboard";
 import AdminNotifications from "./pages/AdminNotifications";
 import AdminCms from "./pages/AdminCms";
 import AdminSettings from "./pages/AdminSettings";
+import AdminPlatformWallet from "./pages/AdminPlatformWallet";
 import AdminAuditLogs from "./pages/AdminAuditLogs";
 import AdminErrorLogs from "./pages/AdminErrorLogs";
 import AdminSupportTickets from "./pages/AdminSupportTickets";
@@ -107,6 +108,7 @@ export default function App() {
             <Route path="notifications" element={<AdminNotifications />} />
             <Route path="cms" element={<AdminCms />} />
             <Route path="settings" element={<AdminSettings />} />
+            <Route path="platform-wallet" element={<AdminPlatformWallet />} />
             <Route path="audit-logs" element={<AdminAuditLogs />} />
             <Route path="error-logs" element={<AdminErrorLogs />} />
             <Route path="support-tickets" element={<AdminSupportTickets />} />

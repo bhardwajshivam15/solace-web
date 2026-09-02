@@ -8,7 +8,6 @@ import type {
   ListenerConversation,
   ListenerProfileDetails,
   ListenerSessionRecord,
-  ListenerWithdrawalRecord,
   Mood,
   PlatformSettings,
   PlatformTransaction,
@@ -19,7 +18,6 @@ import type {
   SpeakerProfile,
   SupportTicket,
   Transaction,
-  WithdrawalRequest,
 } from "../types";
 
 const avatar = (seed: string) =>
@@ -150,15 +148,6 @@ export const revenueOverview = [
   { day: "12 May", value: 40000 },
 ];
 
-export const withdrawalRequests: WithdrawalRequest[] = [
-  { id: "w1", name: "Aarohi", avatar: avatar("47"), date: "12 May, 2024", status: "Pending", amount: 2000, method: "UPI" },
-  { id: "w2", name: "Kabir", avatar: avatar("12"), date: "12 May, 2024", status: "Approved", amount: 5000, method: "Bank" },
-  { id: "w3", name: "Meera", avatar: avatar("45"), date: "11 May, 2024", status: "Pending", amount: 1500, method: "UPI" },
-  { id: "w4", name: "Rohan", avatar: avatar("14"), date: "11 May, 2024", status: "Approved", amount: 3000, method: "Bank" },
-  { id: "w5", name: "Ishita", avatar: avatar("32"), date: "10 May, 2024", status: "Pending", amount: 1000, method: "UPI" },
-  { id: "w6", name: "Dev", avatar: avatar("15"), date: "9 May, 2024", status: "Rejected", amount: 4000, method: "Bank" },
-];
-
 export const listenerApplications: ListenerApplication[] = [
   { id: "a1", name: "Neha", avatar: avatar("29"), topic: "Relationship, Anxiety" },
   { id: "a2", name: "Arjun", avatar: avatar("11"), topic: "Life Advice, Motivation" },
@@ -256,7 +245,6 @@ export const adminOverviewStats = {
   activeListeners: 456,
   todaysSessions: 1234,
   todaysRevenue: 45678,
-  pendingWithdrawals: withdrawalRequests.filter((w) => w.status === "Pending").length,
   pendingApprovals: listenerApplications.length,
   onlineUsers: 812,
   onlineListeners: 128,
@@ -290,7 +278,7 @@ export const speakerProfile: SpeakerProfile = {
   bio: "Just someone who needs to talk sometimes.",
   preferredLanguage: "English",
   timezone: "Asia/Kolkata (IST)",
-  notificationPreferences: { email: true, push: true, sms: false },
+  notificationPreferences: { email: true, push: true },
 };
 
 export const listenerProfileDetails: ListenerProfileDetails = {
@@ -332,12 +320,6 @@ export const listenerSessionHistory: ListenerSessionRecord[] = [
   { id: "ls2", speakerLabel: "Anonymous User #3390", date: "11 May, 2024", time: "08:20 PM", duration: "15m 30s", earning: 105, rating: 5, status: "completed" },
   { id: "ls3", speakerLabel: "Anonymous User #1027", date: "10 May, 2024", time: "07:15 PM", duration: "16m 05s", earning: 112, rating: 4, status: "completed" },
   { id: "ls4", speakerLabel: "Anonymous User #2214", date: "09 May, 2024", time: "06:00 PM", duration: "3m 10s", earning: 0, rating: 0, status: "cancelled" },
-];
-
-export const listenerWithdrawalHistory: ListenerWithdrawalRecord[] = [
-  { id: "lw1", amount: 5000, date: "1 May, 2024", status: "Paid", method: "Bank" },
-  { id: "lw2", amount: 3000, date: "15 Apr, 2024", status: "Paid", method: "UPI" },
-  { id: "lw3", amount: 2000, date: "2 May, 2024", status: "Pending", method: "UPI" },
 ];
 
 export const ratingDistribution: RatingDistributionEntry[] = [

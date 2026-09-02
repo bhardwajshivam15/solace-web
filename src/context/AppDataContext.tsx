@@ -13,6 +13,7 @@ import type {
   ListenerApplication,
   ListenerEarnings,
   LiveSession,
+  MessageReaction,
   Transaction,
 } from "../types";
 import { useAuth } from "./AuthContext";
@@ -42,10 +43,19 @@ interface AppDataContextValue {
   liveThreadUpdates: Record<string, LiveThreadUpdate>;
   liveListenerRatings: Record<string, { rating: number; reviewCount: number }>;
   updateListenerRating: (listenerId: string, rating: number, reviewCount: number) => void;
-  addMoney: (amount: number, couponCode?: string) => Promise<{ balance: number; bonusApplied: number }>;
+  createRechargeOrder: (
+    amount: number,
+    couponCode?: string,
+  ) => Promise<{ razorpayOrderId: string; amount: number; currency: string; keyId: string }>;
+  verifyRechargePayment: (payload: {
+    razorpayOrderId: string;
+    razorpayPaymentId: string;
+    razorpaySignature: string;
+  }) => Promise<{ balance: number; bonusApplied: number }>;
   loadConversation: (otherPartyId: string) => void;
   setActiveThread: (otherPartyId: string | null) => void;
-  sendMessage: (otherPartyId: string, text: string) => Promise<void>;
+  sendMessage: (otherPartyId: string, text: string, replyToMessageId?: string) => Promise<void>;
+  setReaction: (otherPartyId: string, messageId: string, emoji: string) => Promise<void>;
   requestSession: (listenerId: string) => Promise<LiveSession>;
   acceptSessionRequest: (sessionId: string) => Promise<LiveSession>;
   rejectSessionRequest: (sessionId: string) => Promise<void>;
@@ -70,6 +80,8 @@ interface RawMessage {
   iv: string;
   delivered: boolean;
   read: boolean;
+  replyToMessageId: string | null;
+  reactions: MessageReaction[];
   createdAt: string;
 }
 
@@ -83,6 +95,13 @@ interface RawWalletTransaction {
   createdAt: string;
 }
 
+// replyTo is deliberately left unset here — the server only ever gives us
+// the replied-to message's id (see Message.replyTo on the backend; it never
+// needs that message's plaintext), so a preview can only be attached once
+// the referenced message has ALSO been decrypted. Callers do that in a
+// second pass once every message they have available is decrypted (see
+// fetchThread) or by looking it up in already-loaded local state (see the
+// WS "message" handler below).
 async function toChatMessage(message: RawMessage, sharedKey: CryptoKey | null): Promise<ChatMessage> {
   const text = sharedKey
     ? await decryptText(sharedKey, message.ciphertext, message.iv)
@@ -94,6 +113,16 @@ async function toChatMessage(message: RawMessage, sharedKey: CryptoKey | null): 
     time: new Date(message.createdAt).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" }),
     createdAt: message.createdAt,
     status: message.read ? "read" : message.delivered ? "delivered" : "sent",
+    reactions: message.reactions,
+  };
+}
+
+function attachReplyPreview(message: ChatMessage, replyToMessageId: string | null, byId: Map<string, ChatMessage>): ChatMessage {
+  if (!replyToMessageId) return message;
+  const original = byId.get(replyToMessageId);
+  return {
+    ...message,
+    replyTo: original ? { id: original.id, text: original.text, sender: original.sender } : null,
   };
 }
 
@@ -253,8 +282,13 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
       await ensureKeysRegistered(user.id, token);
       const sharedKey = await getSharedKey(otherPartyId, token);
       const response = await apiRequest<{ data: RawMessage[] }>(`${conversationsBasePath}/${otherPartyId}/messages`, { token });
-      const decrypted = await Promise.all(response.data.map((m) => toChatMessage(m, sharedKey)));
-      setConversations((prev) => ({ ...prev, [otherPartyId]: decrypted }));
+      const base = await Promise.all(response.data.map((m) => toChatMessage(m, sharedKey)));
+      // A reply can only ever target an earlier message in this same thread,
+      // so by the time this second pass runs, every message it could
+      // possibly reference is already decrypted and in `byId`.
+      const byId = new Map(base.map((m) => [m.id, m]));
+      const decorated = base.map((m, i) => attachReplyPreview(m, response.data[i].replyToMessageId, byId));
+      setConversations((prev) => ({ ...prev, [otherPartyId]: decorated }));
     } catch {
       loadedThreads.current.delete(otherPartyId);
     }
@@ -290,6 +324,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     socket.onmessage = (event) => {
       const payload = JSON.parse(event.data) as
         | { type: "message" | "read"; threadWithUserId: string; message: RawMessage | null }
+        | { type: "reaction"; threadWithUserId: string; messageId: string; reactions: MessageReaction[] }
         | { type: "presence"; listenerId: string; online: boolean }
         | { type: "WALLET_UPDATED"; balance: number; transaction: RawWalletTransaction }
         | {
@@ -336,10 +371,14 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
         (async () => {
           const sharedKey = await getSharedKey(threadId, token);
           const chatMessage = await toChatMessage(message, sharedKey);
-          setConversations((prev) => ({
-            ...prev,
-            [threadId]: [...(prev[threadId] ?? []), chatMessage],
-          }));
+          setConversations((prev) => {
+            const thread = prev[threadId] ?? [];
+            // A reply can only ever target a message the sender had already
+            // seen, so it's necessarily already in our local thread state —
+            // no separate fetch needed to resolve the preview.
+            const withReply = attachReplyPreview(chatMessage, message.replyToMessageId, new Map(thread.map((m) => [m.id, m])));
+            return { ...prev, [threadId]: [...thread, withReply] };
+          });
 
           const isThreadOpen = activeThreadRef.current === threadId;
           // The thread this arrived in is already open on screen right now —
@@ -395,6 +434,23 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
         return;
       }
 
+      if (payload.type === "reaction") {
+        // The other party added, changed, or removed their reaction — this
+        // carries the message's full current reaction list, not a diff, so
+        // there's no risk of drifting out of sync with a rapid toggle.
+        setConversations((prev) => {
+          const thread = prev[payload.threadWithUserId];
+          if (!thread) return prev;
+          return {
+            ...prev,
+            [payload.threadWithUserId]: thread.map((m) =>
+              m.id === payload.messageId ? { ...m, reactions: payload.reactions } : m,
+            ),
+          };
+        });
+        return;
+      }
+
       if ("session" in payload) {
         const session = payload.session;
         const key = myRole === "speaker" ? session.listenerId : session.speakerId;
@@ -420,18 +476,38 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user, token]);
 
-  const addMoney = async (amount: number, couponCode?: string) => {
-    const response = await apiRequest<{ balance: number; bonusApplied: number | null }>("/speaker/wallet/topup", {
-      method: "POST",
-      token,
-      body: { amount, couponCode: couponCode || undefined },
-    });
+  // Step 1 of real wallet recharge — creates a Razorpay test-mode order, but
+  // credits NOTHING yet (the old one-call addMoney, which credited
+  // unconditionally with no payment step, no longer exists — see
+  // Wallet.tsx for the full checkout flow this feeds into).
+  const createRechargeOrder = async (amount: number, couponCode?: string) => {
+    return apiRequest<{ razorpayOrderId: string; amount: number; currency: string; keyId: string }>(
+      "/speaker/wallet/recharge/order",
+      { method: "POST", token, body: { amount, couponCode: couponCode || undefined } },
+    );
+  };
+
+  // Step 2 — called once Razorpay Checkout's client-side handler fires with
+  // a completed test payment. The wallet is credited server-side only after
+  // this verifies; the balance update itself arrives via the existing
+  // WALLET_UPDATED WebSocket push (fired from inside WalletService.topUp,
+  // reused unchanged), but refreshWallet() here matches the same
+  // belt-and-suspenders pattern the old addMoney already used.
+  const verifyRechargePayment = async (payload: {
+    razorpayOrderId: string;
+    razorpayPaymentId: string;
+    razorpaySignature: string;
+  }) => {
+    const response = await apiRequest<{ balance: number; bonusApplied: number | null }>(
+      "/speaker/wallet/recharge/verify",
+      { method: "POST", token, body: payload },
+    );
     setWalletBalance(Number(response.balance));
     refreshWallet();
     return { balance: Number(response.balance), bonusApplied: Number(response.bonusApplied ?? 0) };
   };
 
-  const sendMessage = async (otherPartyId: string, text: string) => {
+  const sendMessage = async (otherPartyId: string, text: string, replyToMessageId?: string) => {
     const trimmed = text.trim();
     if (!trimmed || !user) return;
     try {
@@ -441,10 +517,12 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
       const { ciphertext, iv } = await encryptText(sharedKey, trimmed);
       const response = await apiRequest<{ message: RawMessage }>(
         `${conversationsBasePath}/${otherPartyId}/messages`,
-        { method: "POST", token, body: { ciphertext, iv } },
+        { method: "POST", token, body: { ciphertext, iv, replyToMessageId: replyToMessageId ?? null } },
       );
       // No need to decrypt the echoed-back message — we already have the
-      // plaintext we just typed.
+      // plaintext we just typed. The replied-to message (if any) is
+      // necessarily already in local state — you can only reply to
+      // something you've already seen rendered.
       const sentMessage: ChatMessage = {
         id: response.message.id,
         sender: response.message.sender,
@@ -452,11 +530,37 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
         time: new Date(response.message.createdAt).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" }),
         createdAt: response.message.createdAt,
         status: response.message.read ? "read" : response.message.delivered ? "delivered" : "sent",
+        reactions: [],
       };
-      setConversations((prev) => ({
-        ...prev,
-        [otherPartyId]: [...(prev[otherPartyId] ?? []), sentMessage],
-      }));
+      setConversations((prev) => {
+        const thread = prev[otherPartyId] ?? [];
+        const withReply = attachReplyPreview(sentMessage, replyToMessageId ?? null, new Map(thread.map((m) => [m.id, m])));
+        return { ...prev, [otherPartyId]: [...thread, withReply] };
+      });
+    } catch {
+      // matches the existing silent-fail pattern for message sends
+    }
+  };
+
+  // Toggle semantics, matching the backend: reacting with the same emoji you
+  // already picked removes it, a different one replaces it. Applies the
+  // server's returned (authoritative) reaction list rather than guessing the
+  // new state client-side, so it can't drift out of sync with what the other
+  // party sees.
+  const setReaction = async (otherPartyId: string, messageId: string, emoji: string) => {
+    try {
+      const response = await apiRequest<{ reactions: MessageReaction[] }>(
+        `${conversationsBasePath}/${otherPartyId}/messages/${messageId}/reaction`,
+        { method: "PUT", token, body: { emoji } },
+      );
+      setConversations((prev) => {
+        const thread = prev[otherPartyId];
+        if (!thread) return prev;
+        return {
+          ...prev,
+          [otherPartyId]: thread.map((m) => (m.id === messageId ? { ...m, reactions: response.reactions } : m)),
+        };
+      });
     } catch {
       // matches the existing silent-fail pattern for message sends
     }
@@ -567,10 +671,12 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
       liveThreadUpdates,
       liveListenerRatings,
       updateListenerRating,
-      addMoney,
+      createRechargeOrder,
+      verifyRechargePayment,
       loadConversation,
       setActiveThread,
       sendMessage,
+      setReaction,
       requestSession,
       acceptSessionRequest,
       rejectSessionRequest,
